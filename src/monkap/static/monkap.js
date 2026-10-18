@@ -347,6 +347,7 @@
     $q("mkNext").disabled = !c || M.index >= M.items.length - 1;
     $q("mkDelete").disabled = !c;
     $q("mkRegen").disabled = !c || regen;
+    $q("mkHintBtn").disabled = !c || regen;
     $q("mkInfo").style.display = c ? "" : "none";
     root.classList.toggle("has-frame", !!(c && M.frame));
     triggerState();
@@ -665,17 +666,18 @@
   }
 
   // ---- Regenerate (AI): the model and task chosen in the settings, for this one picture ------------------------------
-  async function regenerate() {
+  async function regenerate(hint = "") {
     const c = M.cur;
     if (!c || regen) return;
     if (!M.settings.lm_model) { openSettings("ai"); return; }
+    hint = typeof hint === "string" ? hint.trim() : "";
     regen = true;
     syncButtons();
     const prev = text.value;
     try {
       await flush();                                             // what is typed is on disk first, so nothing is lost
       status("Writing the caption…");
-      const r = await api("/api/recaption", {folder: M.folder, name: c.name});
+      const r = await api("/api/recaption", {folder: M.folder, name: c.name, hint});
       if (M.cur !== c) { status(`${c.name}: new caption written.`, "ok"); return; }     // the user moved on meanwhile
       text.value = r.caption; c.loaded = r.caption; M.dirty = false;
       setDot(c.name, true);
@@ -686,6 +688,48 @@
       }} : null);
     } catch (e) { if (M.cur === c) status(`Could not regenerate: ${e.message}`, "err"); }
     finally { regen = false; syncButtons(); }
+  }
+
+  // ---- a hint for the model ----------------------------------------------------------------------------------------
+  const hints = new Map();                                       // picture -> the last hint typed for it (this page only)
+  let hintPanel = null;
+
+  function closeHint() {
+    if (!hintPanel) return;
+    hintPanel.remove(); hintPanel = null;
+    document.removeEventListener("keydown", hintKey, true);
+    document.removeEventListener("mousedown", hintOutside, true);
+  }
+  const hintKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeHint(); focusHome(); } };
+  const hintOutside = (e) => { if (hintPanel && !hintPanel.contains(e.target) && e.target !== $q("mkHintBtn") && !$q("mkHintBtn").contains(e.target)) closeHint(); };
+
+  function openHint() {
+    const c = M.cur;
+    if (!c || regen || M.modal) return;
+    if (hintPanel) { closeHint(); return; }
+    if (!M.settings.lm_model) { openSettings("ai"); return; }
+    const box = el("textarea", {rows: "3", spellcheck: "false", placeholder: "e.g. a close-up from the rear, the intake manifold is off"});
+    box.value = hints.get(c.name) || "";
+    const go = el("button", {type: "button", class: "btn btn-primary btn-sm", text: "Regenerate with hint"});
+    hintPanel = el("div", {class: "mk-hint", role: "dialog", "aria-label": "A hint for the model"},
+      el("button", {type: "button", class: "x", text: "×", title: "Close", onclick: () => { closeHint(); focusHome(); }}),
+      el("h4", {text: "A hint for the model"}), box,
+      el("div", {class: "bar"}, el("span", {class: "field-hint", text: "Sent with the task. Ctrl+Enter to go."}), go));
+    document.body.append(hintPanel);
+    const r = $q("mkHintBtn").getBoundingClientRect(), w = hintPanel.offsetWidth, h = hintPanel.offsetHeight;
+    hintPanel.style.left = clamp(r.right - w, 8, innerWidth - w - 8) + "px";          // right edge on the chevron, above it
+    hintPanel.style.top = Math.max(8, r.top - h - 8) + "px";
+    const send = () => {
+      const t = box.value.trim();
+      if (t) hints.set(c.name, t); else hints.delete(c.name);
+      closeHint();
+      regenerate(t);
+    };
+    go.addEventListener("click", send);
+    box.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } });
+    document.addEventListener("keydown", hintKey, true);
+    document.addEventListener("mousedown", hintOutside, true);
+    box.focus();
   }
 
   // ---- delete ---------------------------------------------------------------------------------------------------
@@ -775,6 +819,7 @@
   }
 
   // in MonKap's own window the system's folder dialog is there (window.pywebview, set up a moment after the page loads)
+  window.pickFolderFor = (start) => window.pywebview.api.pick_folder(start);
   const nativePicker = () => !!(window.pywebview && window.pywebview.api && window.pywebview.api.pick_folder);
 
   async function openFolderDialog() {
@@ -874,11 +919,16 @@
       tick("show_thirds", "Rule-of-thirds lines in the frame")];
 
     // -- deleting
+    const cacheBrowse = nativePicker() ? el("button", {type: "button", class: "btn btn-sm", id: "mkCacheBrowse", text: "Browse…", onclick: async () => {
+      const f = veil.querySelector("input[data-k=latent_cache_dir]");
+      const got = await window.pickFolderFor(f.value.trim());
+      if (got) f.value = got;
+    }}) : null;
     const deleting = [
       radio("delete_mode", "soft", "Move it to the folder's removed/ folder", "With Undo. Recommended."),
       radio("delete_mode", "hard", "Erase it for good", "The picture and its caption. No Undo."),
       tick("confirm_delete", "Ask before deleting", "Enter confirms, Esc cancels."),
-      row("Latent cache folder:", field("latent_cache_dir")),
+      row("Latent cache folder:", field("latent_cache_dir"), cacheBrowse),
       hint("Optional. A trainer's cache of the pictures' latents: erasing a picture for good also clears its files there, so a new picture can't meet old ones. Ignored while MonKap follows Fizgig's cache.")];
 
     // -- the caption model: its server, the model, the task and what the task tells the model
@@ -937,13 +987,32 @@
     const fdir = field("fizgig_dir");
     fdir.placeholder = "The folder with fizgig.py in it";
     const report = el("div", {class: "mk-report"});
+    let fizgigOk = false;
+    const NOTE = "Fizgig integration enabled";
+    // what Fizgig answers for: the field is locked and says so, while the integration is on and its tick is ticked; the
+    // field's own value is kept and comes back when the integration (or the tick) goes
+    function applyLocks() {
+      const q = (k) => veil && veil.querySelector(`input[data-k=${k}]`);
+      if (!veil) return;
+      for (const k of ["fizgig_trigger", "fizgig_ext", "fizgig_cache"]) q(k).disabled = !fizgigOk;
+      for (const [field_, tick_, browse] of [["caption_ext", "fizgig_ext", null], ["latent_cache_dir", "fizgig_cache", veil.querySelector("#mkCacheBrowse")]]) {
+        const f = q(field_), lock = fizgigOk && q(tick_).checked;
+        if (lock && !f.disabled) { f.dataset.mine = f.value; f.value = NOTE; f.disabled = true; f.classList.add("mk-field-note"); }
+        if (!lock && f.disabled) { f.value = f.dataset.mine || ""; f.disabled = false; f.classList.remove("mk-field-note"); }
+        if (browse) browse.style.display = lock ? "none" : "";
+      }
+    }
     async function checkFizgig() {
       report.replaceChildren();
       const d = fdir.value.trim();
-      if (!d) return;
+      fizgigOk = false;
+      if (!d) { applyLocks(); return; }
       let r;
       try { r = await api("/api/fizgig?dir=" + encodeURIComponent(d)); } catch (e) { r = {ok: false, error: e.message}; }
-      if (!r.ok) { report.append(el("div", {class: "field-hint warn", text: r.error})); return; }
+      if (!r.ok) { report.append(el("div", {class: "field-hint warn", text: r.error})); applyLocks(); return; }
+      fizgigOk = true;
+      applyLocks();
+      report.append(el("div", {class: "field-hint ok-note", text: NOTE + ". What Fizgig knows replaces the matching fields (they are greyed out), unless you untick it below."}));
       const line = (k, v) => el("div", {class: "kv"}, el("span", {class: "k", text: k}), el("span", {text: v || "—"}));
       report.append(
         line("Fizgig", r.version ? `version ${r.version}` : "version unknown"),
@@ -1005,18 +1074,23 @@
     for (const [key, label] of tabs) bar.append(el("button", {type: "button", class: "mk-tab", "data-tab": key, text: label, onclick: () => show(key)}));
     const save = el("button", {class: "btn btn-primary", text: "Save"});
     const cancel = el("button", {class: "btn", text: "Cancel"});
-    const {veil, done} = dialog([el("h2", {text: "MonKap settings"}), bar, el("div", {class: "mk-panes"}, panes), err,
+    let veil = null;
+    const shown = dialog([el("h2", {text: "MonKap settings"}), bar, el("div", {class: "mk-panes"}, panes), err,
       el("div", {class: "buttons"}, cancel, save)]);
+    veil = shown.veil;
+    const done = shown.done;
     const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
     const close = () => { document.removeEventListener("keydown", onKey, true); done(); };
     document.addEventListener("keydown", onKey, true);
     cancel.addEventListener("click", close);
     veil.addEventListener("mousedown", (e) => { if (e.target === veil) close(); });
+    for (const k of ["fizgig_ext", "fizgig_cache"]) veil.querySelector(`input[data-k=${k}]`).addEventListener("change", applyLocks);
+    applyLocks();
     save.addEventListener("click", async () => {
       const next = {template: tpl.value};
       for (const r of veil.querySelectorAll("input[type=radio]:checked")) next[r.name] = r.value;
       for (const k of veil.querySelectorAll("input[type=checkbox]")) next[k.dataset.k] = k.checked;
-      for (const i of veil.querySelectorAll("[data-t]")) next[i.dataset.k] = i.dataset.t === "number" ? Number(i.value) : i.value;
+      for (const i of veil.querySelectorAll("[data-t]")) if (!i.disabled) next[i.dataset.k] = i.dataset.t === "number" ? Number(i.value) : i.value;
       try {
         const r = await api("/api/settings", {settings: next});
         M.settings = r.settings; M.tasks = r.tasks; M.ext = r.caption_ext;
@@ -1082,7 +1156,8 @@
     $q("mkDrawer").textContent = open ? "Pictures ▴" : "Pictures ▾";
     if (open) { drawStrip(true); scrollStripTo(M.index); }
   });
-  $q("mkRegen").addEventListener("click", regenerate);
+  $q("mkRegen").addEventListener("click", () => regenerate());
+  $q("mkHintBtn").addEventListener("click", openHint);
   $q("mkShow").addEventListener("change", rearrange);
   $q("mkSort").addEventListener("change", rearrange);
   $q("mkLegend").addEventListener("click", (e) => { e.preventDefault(); openReviewHelp(); });

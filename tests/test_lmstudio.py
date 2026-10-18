@@ -118,5 +118,55 @@ class LmStudioTests(unittest.TestCase):
             Fake.reply = old
 
 
+class RecaptionHintTests(unittest.TestCase):
+    """The user's hint rides with the task to the model, and the caption comes back written."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.url = f"http://127.0.0.1:{cls.srv.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def setUp(self):
+        from monkap import api
+        self.api = api
+        self.tmp = tempfile.TemporaryDirectory()
+        self._home = os.environ.get("MONKAP_HOME")
+        os.environ["MONKAP_HOME"] = os.path.join(self.tmp.name, "home")
+        self.ds = os.path.join(self.tmp.name, "ds")
+        os.makedirs(self.ds)
+        Image.new("RGB", (64, 64)).save(os.path.join(self.ds, "a.png"))
+        api.save_settings({"lm_url": self.url, "lm_model": "vis"})
+        Fake.seen.clear()
+
+    def tearDown(self):
+        if self._home is None:
+            os.environ.pop("MONKAP_HOME", None)
+        else:
+            os.environ["MONKAP_HOME"] = self._home
+        self.tmp.cleanup()
+
+    def sent_text(self):
+        return Fake.seen[0]["messages"][0]["content"][0]["text"]
+
+    def test_without_a_hint_the_task_goes_alone(self):
+        r = self.api.recaption(self.ds, "a.png", ".txt")
+        self.assertEqual(r["caption"], "A dog on a lawn.")
+        self.assertNotIn("The user adds this note", self.sent_text())
+
+    def test_a_hint_goes_after_the_task_tidied_and_cut(self):
+        self.api.recaption(self.ds, "a.png", ".txt", "  close-up,\n rear view, the manifold is off ")
+        text = self.sent_text()
+        self.assertIn("The user adds this note", text)
+        self.assertTrue(text.endswith("close-up, rear view, the manifold is off"))
+        Fake.seen.clear()
+        self.api.recaption(self.ds, "a.png", ".txt", "x" * 5000)
+        self.assertTrue(self.sent_text().endswith("x" * self.api.MAX_HINT))
+
+
 if __name__ == "__main__":
     unittest.main()

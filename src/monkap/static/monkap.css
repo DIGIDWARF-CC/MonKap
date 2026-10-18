@@ -193,3 +193,25 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 .mk-more:hover { text-decoration: underline; }
 .vd-row { display: flex; gap: 10px; align-items: flex-start; margin: 7px 0; font-size: 13px; }
 .vd-row .vd { flex: 0 0 92px; text-align: center; margin-top: 1px; }
+
+/* Regenerate and its hint chevron: one split button */
+.mk-split { display: flex; gap: 0; }
+.mk-split #mkRegen { border-top-right-radius: 0; border-bottom-right-radius: 0; flex: 1 1 auto; }
+.mk-chev { width: 30px; padding: 0 !important; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; flex: 0 0 30px !important; min-width: 30px; }
+.mk-chev .ico { width: 15px; height: 15px; }
+.mk-hint { position: fixed; z-index: 1050; width: min(360px, calc(100vw - 24px)); padding: 12px 14px; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 12px 36px rgba(0, 0, 0, .55); }
+.mk-hint h4 { margin: 0 0 6px; font-size: 13px; color: var(--text-primary); }
+.mk-hint textarea { width: 100%; height: 84px; resize: vertical; font-size: 13px; }
+.mk-hint .bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.mk-hint .bar .field-hint { flex: 1 1 auto; }
+.mk-hint .x { position: absolute; right: 8px; top: 6px; border: 0; background: transparent; color: var(--text-secondary); font-size: 18px; line-height: 1; cursor: pointer; }
+.mk-hint .x:hover { color: #fff; }
+.mk-field-note { color: var(--text-muted) !important; font-style: italic; }
+
+.mk-actions .mk-split { flex: 1 1 auto; min-width: 0; }
+@container mkmain (max-width: 600px) {
+  .mk-actions .mk-split { flex: 1 1 0; }
+}
+.ok-note { color: var(--success) !important; }
+.mk-dialog input:disabled { opacity: .75; cursor: default; }

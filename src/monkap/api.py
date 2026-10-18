@@ -210,15 +210,23 @@ def models(url=None) -> dict:
         return {"models": [], "error": str(exc)}
 
 
-def recaption(folder, name, ext) -> dict:
-    """Write this picture's caption again with the chosen model and task (the old text is backed up first)."""
+HINT_NOTE = ("The user adds this note about this picture. Where it differs from what you think you see, trust the note: ")
+MAX_HINT = 600
+
+
+def recaption(folder, name, ext, hint="") -> dict:
+    """Write this picture's caption again with the chosen model and task (the old text is backed up first). `hint` is a
+    short note from the user about this picture, passed to the model with the task."""
     folder, path = dataset.locate(folder, name)
     s = load_settings()
     if not s.lm_model:
         raise ValueError("Pick a model in the settings (the gear) first.")
+    instruction = tasks.instruction(s.ai_task, s.ai_instructions)
+    hint = " ".join(str(hint or "").split())[:MAX_HINT]
+    if hint:
+        instruction = f"{instruction}\n\n{HINT_NOTE}{hint}"
     with _ai_lock:
-        text = lmstudio.caption_image(s.lm_url, s.lm_model, path, tasks.instruction(s.ai_task, s.ai_instructions),
-                                      s.ai_max_tokens, s.ai_think)
+        text = lmstudio.caption_image(s.lm_url, s.lm_model, path, instruction, s.ai_max_tokens, s.ai_think)
     if not text:
         raise ValueError("The model wrote nothing.")
     trigger = folder_trigger(folder)
@@ -299,7 +307,7 @@ def post(h, path, b) -> None:
         if path == "/api/folder":
             return h.json(open_folder(b.get("folder"), b.get("trigger")))
         if path == "/api/recaption":
-            return h.json(recaption(b.get("folder"), b.get("name"), ext))
+            return h.json(recaption(b.get("folder"), b.get("name"), ext, b.get("hint")))
         if path == "/api/ai/instruction":
             s = load_settings()
             key, text = str(b.get("key") or ""), str(b.get("text") or "").strip()
