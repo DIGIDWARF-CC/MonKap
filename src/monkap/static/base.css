@@ -1,0 +1,40 @@
+/* MonKap's palette and basic controls. */
+:root {
+  --bg-deep: #1E2530; --bg-surface: #252D38; --bg-hover: #2A3542; --bg-inset: #1A2028;
+  --text-primary: #F0F4F8; --text-secondary: #8A9BAE; --text-explain: #C3CDD9; --text-muted: #5A6B7E;
+  --accent: #3B82F6; --accent-hover: #60A5FA; --accent-subtle: #1E3A5F;
+  --border: #3A4555; --border-focus: #3B82F6;
+  --success: #10B981; --warning: #F59E0B; --danger: #EF4444;
+  --radius: 10px; --radius-sm: 6px;
+  --font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font-mono: Consolas, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg-deep); color: var(--text-primary); font: 10pt/1.4 var(--font-family); overflow: hidden;
+  -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: #34425a; border: 2px solid var(--bg-deep); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 16px; height: 34px;
+  font: 700 10pt var(--font-family); border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--text-primary); cursor: pointer; user-select: none; white-space: nowrap; flex-shrink: 0; }
+.btn:hover { background: var(--bg-hover); border-color: #4a586b; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover { background: #DC2626; border-color: #DC2626; }
+.btn-sm { height: 26px; padding: 0 10px; font-size: 8.5pt; }
+
+.field-hint { font-size: 9pt; color: var(--text-secondary); line-height: 1.45; }
+input[type="text"], input[type="number"], select { background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 9px; font: 13px var(--font-family); }
+input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus { border-color: var(--border-focus); outline: none; }
+textarea { background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font: 13px/1.45 var(--font-family); padding: 8px 10px; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+a { color: var(--accent-hover); }

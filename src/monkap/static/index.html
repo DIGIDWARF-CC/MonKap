@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MonKap</title>
+<link rel="stylesheet" href="/base.css">
+<link rel="stylesheet" href="/monkap.css">
+</head>
+<body>
+<div class="mk" id="mk">
+  <div class="mk-main">
+    <div class="mk-stage" id="mkStage" tabindex="0" aria-label="The picture">
+      <canvas id="mkCanvas"></canvas>
+      <div class="mk-ratios" id="mkRatios" role="group" aria-label="Frame ratio"></div>
+      <button class="mk-i" id="mkInfo" title="About this picture" aria-label="About this picture">i</button>
+      <button class="btn btn-primary mk-kap" id="mkKapture" title="Save the frame as a new picture (C)">Kapture <kbd>C</kbd></button>
+      <div class="mk-zoom" id="mkZoom">
+        <button class="mk-zb" id="mkZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+        <button class="mk-zb mk-pct" id="mkActual" title="Zoom. Click for one picture pixel per screen pixel">100%</button>
+        <button class="mk-zb" id="mkZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+        <button class="mk-zb" id="mkFit" title="Fit the whole picture">Fit</button>
+      </div>
+      <div class="mk-mode" id="mkMode">Selection mode: <kbd>C</kbd> saves the frame as a new picture · <kbd>Esc</kbd> drops it</div>
+      <div class="mk-msg" id="mkMsg"></div>
+    </div>
+    <div class="mk-caption">
+      <div class="mk-capbox">
+        <textarea id="mkText" spellcheck="false" placeholder="Caption (saved by itself when you move on)"></textarea>
+        <span class="mk-badge" id="mkBadge" style="display:none"></span>
+      </div>
+      <div class="field-hint mk-status" id="mkStatus"></div>
+    </div>
+    <div class="mk-actions">
+      <button class="btn" id="mkPrev" title="Previous picture (PgUp)"><svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span class="lbl">Prev</span><kbd>PgUp</kbd></button>
+      <button class="btn" id="mkNext" title="Next picture (PgDn)"><span class="lbl">Next</span><svg class="ico" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><kbd>PgDn</kbd></button>
+      <button class="btn" id="mkTrigger" title="Put the trigger word first in the caption" style="display:none"><svg class="ico" viewBox="0 0 24 24"><circle cx="10" cy="12" r="7.5"/><path d="M2.5 12h15M10 4.5c2.2 2.2 3.2 4.7 3.2 7.5s-1 5.3-3.2 7.5c-2.2-2.2-3.2-4.7-3.2-7.5S7.8 6.7 10 4.5z"/><path d="M20.5 7v10M18.8 7h3.4M18.8 17h3.4"/></svg><span class="lbl">Trigger word</span></button>
+      <button class="btn" id="mkRegen"
+        title="Write this picture's caption again with the model and task from the settings"><svg class="ico" viewBox="0 0 24 24"><path d="M9.5 4.5A3 3 0 0 0 6.6 7 3.2 3.2 0 0 0 4.5 12a3.2 3.2 0 0 0 2 4.8A3 3 0 0 0 9.5 19.5a2.5 2.5 0 0 0 2.5-1.8V6.3a2.5 2.5 0 0 0-2.5-1.8z"/><path d="M14.5 4.5A3 3 0 0 1 17.4 7a3.2 3.2 0 0 1 2.1 5 3.2 3.2 0 0 1-2 4.8 3 3 0 0 1-3 2.7 2.5 2.5 0 0 1-2.5-1.8V6.3a2.5 2.5 0 0 1 2.5-1.8z"/><path d="M9.5 9.5c1 0 2.5.5 2.5 2M14.5 9.5c-1 0-2.5.5-2.5 2M9.5 15c1 0 2.5-.6 2.5-2M14.5 15c-1 0-2.5-.6-2.5-2"/></svg><span class="lbl">Regenerate (AI)</span></button>
+      <button class="btn btn-danger" id="mkDelete" title="Delete this picture (Shift+Delete)"><svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5"/></svg><span class="lbl">Delete…</span><kbd>⇧</kbd><kbd>Del</kbd></button>
+    </div>
+  </div>
+  <aside class="mk-side">
+    <div class="mk-title">
+      <h1>MonKap</h1>
+      <button class="mk-q" id="mkHelp" title="What is MonKap, and how to use it" aria-label="Help">?</button>
+      <button class="mk-q" id="mkSettings" title="Names of the new pictures, captions, delete mode" aria-label="Settings">⚙</button>
+    </div>
+    <a href="#" class="mk-change" id="mkChange">Change folder…</a>
+    <button class="btn btn-sm mk-drawer" id="mkDrawer" aria-expanded="false">Pictures ▾</button>
+    <div class="mk-strip" id="mkStrip" aria-label="Pictures in the folder"><div class="mk-strip-in" id="mkStripIn"></div></div>
+  </aside>
+</div>
+<script src="/lib.js"></script>
+<script src="/monkap_geo.js"></script>
+<script src="/monkap.js"></script>
+</body>
+</html>

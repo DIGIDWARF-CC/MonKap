@@ -1,0 +1,122 @@
+"""LM Studio captions against a fake server (no LM Studio, no GPU)."""
+import json
+import os
+import sys
+import tempfile
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import _path  # noqa: F401
+from PIL import Image  # noqa: E402
+
+from monkap.ai import lmstudio  # noqa: E402
+
+MODELS = {"models": [
+    {"key": "vis", "type": "llm", "capabilities": {"vision": True}, "loaded_instances": [{"id": "vis"}]},
+    {"key": "text-only", "type": "llm", "capabilities": {"vision": False}, "loaded_instances": []},
+    {"key": "embed", "type": "embedding"},
+    {"key": "vis2", "type": "llm", "capabilities": {"vision": True}, "loaded_instances": []}]}
+
+
+class Fake(BaseHTTPRequestHandler):
+    seen = []
+    reply = {"choices": [{"message": {"content": "  \"A dog on a lawn.\"\n"}, "finish_reason": "stop"}]}
+    status = 200
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, code, obj):
+        raw = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):
+        if self.path == "/api/v1/models":
+            return self._send(200, MODELS)
+        self._send(404, {})
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        Fake.seen.append(body)
+        if Fake.status != 200:
+            return self._send(Fake.status, {"error": {"message": "model failed to load"}})
+        self._send(200, Fake.reply)
+
+
+class LmStudioTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.url = f"http://127.0.0.1:{cls.srv.server_address[1]}"
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.pic = os.path.join(cls.tmp.name, "a.png")
+        Image.new("RGBA", (3000, 1500), (200, 30, 30, 255)).save(cls.pic)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.tmp.cleanup()
+
+    def setUp(self):
+        Fake.seen.clear()
+        Fake.status = 200
+
+    def test_address_is_tidied(self):
+        self.assertEqual(lmstudio.base_url(""), "http://localhost:1234")
+        self.assertEqual(lmstudio.base_url("localhost:1234/"), "http://localhost:1234")
+        self.assertEqual(lmstudio.base_url("http://10.0.0.5:1234/v1"), "http://10.0.0.5:1234")
+        with self.assertRaises(ValueError):
+            lmstudio.base_url("http://bad host/")
+
+    def test_only_models_that_see_pictures(self):
+        got = lmstudio.list_models(self.url)
+        self.assertEqual([m["id"] for m in got], ["vis", "vis2"])
+        self.assertEqual([m["loaded"] for m in got], [True, False])
+
+    def test_nothing_listening(self):
+        with self.assertRaises(OSError):
+            lmstudio.list_models("http://127.0.0.1:9")
+
+    def test_caption_is_one_clean_line_and_picture_is_small_jpeg(self):
+        text = lmstudio.caption_image(self.url, "vis", self.pic, "Describe it.", 120)
+        self.assertEqual(text, "A dog on a lawn.")
+        body = Fake.seen[0]
+        self.assertEqual(body["model"], "vis")
+        self.assertEqual(body["reasoning_effort"], "none")
+        self.assertEqual(body["max_tokens"], 120)
+        url = body["messages"][0]["content"][1]["image_url"]["url"]
+        self.assertTrue(url.startswith("data:image/jpeg;base64,"))
+
+    def test_thinking_gets_room_and_no_switch(self):
+        lmstudio.caption_image(self.url, "vis", self.pic, "x", 100, think=True)
+        self.assertNotIn("reasoning_effort", Fake.seen[0])
+        self.assertEqual(Fake.seen[0]["max_tokens"], 100 + lmstudio.THINK_EXTRA_TOKENS)
+
+    def test_think_block_is_dropped(self):
+        self.assertEqual(lmstudio.clean("<think>hm\nhm</think>\nA cat."), "A cat.")
+
+    def test_server_error_is_said(self):
+        Fake.status = 500
+        with self.assertRaises(RuntimeError) as c:
+            lmstudio.caption_image(self.url, "vis", self.pic, "x", 50)
+        self.assertIn("failed to load", str(c.exception))
+
+    def test_ran_out_of_tokens_is_said(self):
+        old = Fake.reply
+        Fake.reply = {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+        try:
+            with self.assertRaises(RuntimeError) as c:
+                lmstudio.caption_image(self.url, "vis", self.pic, "x", 50)
+            self.assertIn("ran out of tokens", str(c.exception))
+        finally:
+            Fake.reply = old
+
+
+if __name__ == "__main__":
+    unittest.main()

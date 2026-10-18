@@ -1,0 +1,168 @@
+/* MonKap: the page's own styles (monkap.js). The palette and the basic controls are in base.css. */
+
+.mk { display: grid; grid-template-columns: minmax(0, 1fr) 168px; gap: 14px; margin: 14px 18px 0; height: calc(100vh - 28px); min-height: 480px; }
+.mk-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; container: mkmain / inline-size; }
+.mk-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; }
+
+/* title (right column, above the filmstrip) */
+.mk-title { display: flex; align-items: center; gap: 8px; }
+.mk-title h1 { font-size: 17pt; font-weight: 700; color: var(--text-primary); margin: 0; line-height: 1.2; flex: 1 1 auto; }
+.mk-q { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--text-secondary); font: 700 13px var(--font-family); cursor: pointer; padding: 0; line-height: 1; }
+.mk-q:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+.mk-change { font-size: 12px; color: var(--text-muted); text-decoration: none; padding: 0 2px; }
+.mk-change:hover { color: var(--accent-hover); text-decoration: underline; }
+.mk-drawer { display: none; }
+
+/* the picture */
+.mk-stage { position: relative; flex: 1 1 auto; min-height: 200px; background: #10151b; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden; outline: none; touch-action: none; }
+.mk-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.mk-stage:focus-visible, .mk.selecting .mk-stage { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.mk-kap { position: absolute; left: 10px; bottom: 10px; display: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
+.mk.has-frame .mk-kap { display: inline-flex; }
+.mk-kap:disabled { opacity: .6; cursor: default; }
+.mk-mode { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: none; padding: 5px 12px;
+  background: rgba(30, 58, 95, .92); color: #fff; border: 1px solid var(--accent); border-radius: 999px; font-size: 12px;
+  pointer-events: none; white-space: nowrap; max-width: calc(100% - 330px); overflow: hidden; text-overflow: ellipsis; }
+.mk.selecting .mk-mode { display: block; }
+.mk-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 24px; color: var(--text-secondary); font-size: 14px; pointer-events: none; }
+.mk-msg:empty { display: none; }
+
+.mk-ratios { position: absolute; left: 10px; top: 10px; display: none; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden; background: rgba(26, 32, 40, .9); }
+.mk.has-frame .mk-ratios { display: inline-flex; }
+.mk-ratios button { border: 0; border-right: 1px solid var(--border); background: transparent; color: var(--text-secondary);
+  padding: 5px 10px; font: 600 12px var(--font-family); cursor: pointer; }
+.mk-ratios button:last-child { border-right: 0; }
+.mk-ratios button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.mk-ratios button.on { background: var(--accent-subtle); color: #fff; box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* a small round "i": details that need not be on screen all the time */
+.mk-i { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: rgba(26, 32, 40, .9);
+  color: var(--text-secondary); font: italic 700 12px Georgia, serif; cursor: pointer; padding: 0; line-height: 1; }
+.mk-i:hover { color: #fff; border-color: var(--accent); }
+.mk-stage > .mk-i { position: absolute; right: 10px; top: 10px; }
+
+.mk-zoom { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px; padding: 3px; background: rgba(26, 32, 40, .86);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.mk-zb { min-width: 30px; height: 26px; padding: 0 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface);
+  color: var(--text-secondary); font: 600 12px var(--font-family); cursor: pointer; }
+.mk-zb:hover { background: var(--bg-hover); color: var(--text-primary); }
+.mk-pct { min-width: 52px; }
+.mk-zb:disabled { opacity: .4; cursor: default; }
+
+/* the caption */
+.mk-caption { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
+.mk-capbox { position: relative; }
+#mkText { display: block; width: 100%; height: 108px; resize: vertical; min-height: 54px; max-height: 40vh; font: 13.5px/1.45 var(--font-family);
+  background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
+#mkText:focus { border-color: var(--border-focus); outline: none; }
+.mk.selecting #mkText { opacity: .55; }
+.mk-badge { position: absolute; right: 12px; top: -11px; padding: 1px 9px; border-radius: 999px; background: #3a2e12;
+  color: var(--warning); border: 1px solid rgba(245, 158, 11, .6); font-size: 11.5px; }
+.mk-status { min-height: 20px; margin: 0; }
+.mk-status.ok { color: var(--success); }
+.mk-status.warn { color: var(--warning); }
+.mk-status.err { color: var(--danger); }
+.mk-status button { margin-left: 8px; }
+
+.mk-actions { display: flex; flex-wrap: nowrap; gap: 8px; }
+.mk-actions .btn, .mk-kap { white-space: nowrap; align-items: center; justify-content: center; gap: 6px; }
+.mk-actions .btn { display: inline-flex; }
+.mk-actions .btn:disabled { opacity: .45; cursor: default; }
+.ico { width: 17px; height: 17px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; border: 1px solid rgba(255, 255, 255, .28);
+  border-bottom-width: 2px; border-radius: 4px; background: rgba(255, 255, 255, .08); font: 600 10.5px/16px var(--font-family);
+  text-align: center; color: inherit; vertical-align: 1px; }
+
+/* less room: the key hints go first, then the words (the icons stay) */
+@container mkmain (max-width: 700px) {
+  .mk-actions kbd, .mk-kap kbd { display: none; }
+}
+@container mkmain (max-width: 600px) {
+  .mk-actions .lbl { display: none; }
+  .mk-actions .btn { padding-left: 10px; padding-right: 10px; }
+  .mk-mode { display: none !important; }
+}
+
+/* the filmstrip: a column on the right; a row below (and a drawer) in a narrow window */
+.mk-strip { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--bg-inset);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.mk-strip-in { position: relative; }
+.mk-th { position: absolute; border: 2px solid transparent; border-radius: 6px; background: var(--bg-surface); cursor: pointer; overflow: hidden; }
+.mk-strip.v .mk-th { left: 4px; right: 4px; height: 96px; }
+.mk-strip.h .mk-th { top: 4px; bottom: 4px; width: 88px; }
+.mk-th:hover { border-color: var(--border); }
+.mk-th.cur { border-color: var(--accent); }
+.mk-th img { width: 100%; height: 100%; object-fit: cover; display: block; background: #10151b; }
+.mk-th .pill { position: absolute; left: 4px; bottom: 4px; padding: 0 7px; border-radius: 999px; background: rgba(60, 40, 8, .92);
+  color: var(--warning); border: 1px solid rgba(245, 158, 11, .6); font: 600 10px/16px var(--font-family); pointer-events: none; }
+.mk-th .pill.has { display: none; }
+.mk-th .mk-i { position: absolute; right: 4px; top: 4px; width: 18px; height: 18px; font-size: 10px; opacity: 0; transition: opacity .12s; }
+.mk-th:hover .mk-i, .mk-th.cur .mk-i { opacity: 1; }
+
+.mk-pop { position: fixed; z-index: 1100; padding: 8px 11px; max-width: 320px; background: var(--bg-surface); color: var(--text-explain);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); font-size: 12.5px; line-height: 1.5; word-break: break-all; }
+.mk-pop div:first-child { color: var(--text-primary); font-weight: 600; }
+
+/* the dialogs (help, settings, delete confirmation) */
+.mk-veil { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgba(10, 14, 20, .66); }
+.mk-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: 0 18px 60px rgba(0, 0, 0, .5); }
+.mk-dialog h2 { font-size: 15pt; margin: 0 0 6px; color: var(--text-primary); }
+.mk-dialog .lead { color: var(--text-explain); margin-bottom: 12px; line-height: 1.45; }
+.mk-dialog .row { display: flex; align-items: center; gap: 10px; margin: 9px 0; flex-wrap: wrap; }
+.mk-dialog .row > label.k { flex: 0 0 150px; color: var(--text-secondary); }
+.mk-dialog input[type="text"], .mk-dialog select { background: var(--bg-inset); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 9px; font: 13px var(--font-family); }
+.mk-dialog input[type="text"] { flex: 1 1 220px; }
+.mk-dialog .opt { display: flex; gap: 8px; align-items: flex-start; margin: 5px 0; color: var(--text-explain); line-height: 1.4; }
+.mk-dialog .eg { color: var(--text-muted); font: 12px var(--font-mono); word-break: break-all; }
+.mk-dialog .eg.bad { color: var(--danger); }
+.mk-dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.mk-dialog .warn { color: var(--warning); }
+.mk-dialog .quote { margin: 8px 0; padding: 7px 10px; background: var(--bg-inset); border-radius: var(--radius-sm);
+  color: var(--text-explain); font-size: 12.5px; max-height: 90px; overflow: auto; white-space: pre-wrap; }
+.mk-keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 6px 0 4px; color: var(--text-explain); }
+.mk-keys dt { text-align: right; white-space: nowrap; }
+.mk-keys kbd { margin: 0 2px; }
+
+/* a narrow window: the filmstrip goes below, in a drawer */
+@media (max-width: 1000px) {
+  html, body { height: auto; overflow-y: auto; }
+  .mk { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; height: auto; min-height: calc(100vh - 10px); margin: 10px 12px 0; }
+  .mk-main { min-height: 0; }
+  .mk-stage { height: max(240px, calc(100vh - 440px)); flex: none; }
+  .mk-side { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; grid-row: 1; }
+  .mk-main { grid-row: 2; }
+  /* the buttons fill the whole row, whatever their number, and stay at the bottom edge of the window */
+  .mk-actions { margin-top: auto; position: sticky; bottom: 0; z-index: 5; margin-left: -12px; margin-right: -12px; padding: 8px 12px 12px; background: var(--bg-deep);
+    border-top: 1px solid var(--border); }
+  .mk-actions .btn { flex: 1 1 auto; }
+  .mk-title { grid-column: 1; }
+  .mk-title h1 { display: none; }
+  .mk-title { justify-content: flex-start; }
+  .mk-change { grid-column: 1; }
+  .mk-drawer { display: inline-block; grid-column: 2; grid-row: 1 / span 2; }
+  .mk-strip { grid-column: 1 / -1; display: none; height: 104px; flex: none; overflow-x: auto; overflow-y: hidden; }
+  .mk.strip-open .mk-strip { display: block; }
+}
+
+/* icons only: equal buttons that fill the row (after the narrow-window block, which makes them share the room by content) */
+@container mkmain (max-width: 600px) {
+  .mk-actions .btn { flex: 1 1 0; min-width: 0; }
+}
+
+/* the folder dialog */
+.mk-browse { max-height: 230px; overflow-y: auto; margin: 6px 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-inset); }
+.mk-dir { display: block; width: 100%; text-align: left; padding: 6px 10px; border: 0; border-bottom: 1px solid rgba(58, 69, 85, .5);
+  background: transparent; color: var(--text-primary); font: 13px var(--font-family); cursor: pointer; word-break: break-all; }
+.mk-dir:last-child { border-bottom: 0; }
+.mk-dir:hover { background: var(--bg-hover); }
+.mk-recent { margin: 4px 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-inset); }
+.mk-recent > .field-hint { padding: 5px 10px 0; }
+.mk-dialog { width: min(600px, calc(100vw - 32px)); }
+.w-num { width: 90px; }
