@@ -40,15 +40,16 @@ Name: "{autodesktop}\MonKap"; Filename: "{app}\MonKap.exe"; Tasks: desktopicon
 Filename: "{app}\MonKap.exe"; Description: "Start MonKap"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// MonKap keeps its settings and the list of opened folders in %LOCALAPPDATA%\MonKap. The uninstaller asks before
-// removing them (a silent uninstall leaves them), and never touches a dataset folder.
+// MonKap keeps its settings and the list of opened folders in the user_data folder inside its own folder. The
+// uninstaller asks before removing them (a silent uninstall leaves them; deleting the folder removes them too), and
+// never touches a dataset folder.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Data: String;
 begin
-  if CurUninstallStep = usPostUninstall then
+  if CurUninstallStep = usUninstall then
   begin
-    Data := ExpandConstant('{localappdata}\MonKap');
+    Data := ExpandConstant('{app}\user_data');
     if DirExists(Data) and (not UninstallSilent) then
       if MsgBox('Also remove MonKap''s settings and the list of folders you opened?' + #13#10 + Data + #13#10#13#10 +
                 'Your datasets are not touched.', mbConfirmation, MB_YESNO) = IDYES then

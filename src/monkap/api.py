@@ -15,6 +15,7 @@ from PIL import Image
 from . import __version__, appdata, dataset
 from .ai import lmstudio, tasks
 from .core import captions, jobs, ledger
+from .integrations import fizgig
 from .core.fsutil import IMAGE_EXTS
 from .core.naming import TemplateError, example_names, normalize_template
 from .core.settings import CAPTION_MODES, DELETE_MODES, DELETE_SOFT, RATIO_NAMES, MonkapSettings
@@ -44,9 +45,17 @@ def save_settings(changes: dict) -> tuple[MonkapSettings, str]:
     return s, note
 
 
+def effective_ext(s: MonkapSettings | None = None) -> str:
+    """The caption files' extension: Fizgig's Caption Extension when MonKap is told to follow it, else MonKap's own."""
+    s = s or load_settings()
+    if s.fizgig_dir and s.fizgig_ext:
+        return fizgig.caption_ext(s.fizgig_dir) or s.caption_ext
+    return s.caption_ext
+
+
 def settings_payload(s: MonkapSettings | None = None) -> dict:
     s = s or load_settings()
-    return {"settings": s.to_dict(), "examples": example_names(s.template), "ratios": list(RATIO_NAMES),
+    return {"settings": s.to_dict(), "caption_ext": effective_ext(s), "examples": example_names(s.template), "ratios": list(RATIO_NAMES),
             "caption_modes": list(CAPTION_MODES), "delete_modes": list(DELETE_MODES), "version": __version__,
             "tasks": tasks.listing(s.ai_instructions)}
 
@@ -58,7 +67,12 @@ def _key(folder: str) -> str:
 
 
 def folder_trigger(folder: str) -> str:
-    return str((appdata.read_json("folders.json", {}).get(_key(folder)) or {}).get("trigger") or "")
+    """The folder's trigger word: the one set in MonKap, else the one Fizgig has for it (when MonKap follows Fizgig)."""
+    mine = str((appdata.read_json("folders.json", {}).get(_key(folder)) or {}).get("trigger") or "")
+    if mine:
+        return mine
+    s = load_settings()
+    return fizgig.trigger_word(s.fizgig_dir, folder) if s.fizgig_dir and s.fizgig_trigger else ""
 
 
 def open_folder(folder: str, trigger=None) -> dict:
@@ -159,7 +173,8 @@ def delete(folder, name, ext) -> dict:
     s = load_settings()
     if s.delete_mode == DELETE_SOFT:
         return {"mode": DELETE_SOFT, "moved": dataset.remove(folder, name, ext)}
-    res = jobs.delete_permanently(path, s.latent_cache_dir, ext)
+    cache = fizgig.latent_cache_for(s.fizgig_dir, folder) if s.fizgig_dir and s.fizgig_cache else s.latent_cache_dir
+    res = jobs.delete_permanently(path, cache, ext)
     return {"mode": "hard", "purged": res.purged, "notes": res.notes}
 
 
@@ -199,12 +214,12 @@ def get(h, path, qs) -> None:
         if path == "/api/state":
             return h.json(settings_payload())
         if path == "/api/list":
-            ext = load_settings().caption_ext
+            ext = effective_ext()
             folder = os.path.abspath(one("folder"))
             return h.json({"folder": folder, "ext": ext, "trigger": folder_trigger(folder),
                            "items": dataset.list_folder(folder, ext)})
         if path == "/api/info":
-            return h.json(info(one("folder"), one("name"), load_settings().caption_ext))
+            return h.json(info(one("folder"), one("name"), effective_ext()))
         if path in ("/api/thumb", "/api/view", "/api/tile"):
             folder, pic = dataset.locate(one("folder"), one("name"))
             if path == "/api/thumb":
@@ -226,6 +241,8 @@ def get(h, path, qs) -> None:
             return h.json({"ok": True, "template": tpl, "note": note, "examples": example_names(tpl)})
         if path == "/api/browse":
             return h.json(browse(one("path")))
+        if path == "/api/fizgig":
+            return h.json(fizgig.summary(qs["dir"][0] if "dir" in qs else load_settings().fizgig_dir))
         if path == "/api/ai/models":
             return h.json(models(qs["url"][0] if "url" in qs else None))
         if path == "/api/data":
@@ -242,7 +259,7 @@ def get(h, path, qs) -> None:
 
 def post(h, path, b) -> None:
     try:
-        ext = load_settings().caption_ext
+        ext = effective_ext()
         if path == "/api/caption":
             return h.json(save_caption(b.get("folder"), b.get("name"), b.get("text"), b.get("loaded"), ext))
         if path == "/api/kapture":

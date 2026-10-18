@@ -24,6 +24,10 @@ class MonkapSettings:
     delete_mode: str = DELETE_SOFT        # soft = recoverable, hard = erased for good
     caption_ext: str = ".txt"             # the caption files' extension (the trainer's Caption Extension)
     latent_cache_dir: str = ""            # a trainer's latent cache folder: a hard delete clears the picture's latents there
+    fizgig_dir: str = ""                  # a Fizgig install to read from (integrations/fizgig.py); empty: not used
+    fizgig_trigger: bool = True           # a folder without a trigger word of its own gets the one Fizgig has for it
+    fizgig_ext: bool = True               # the caption files' extension is Fizgig's Caption Extension
+    fizgig_cache: bool = True             # a hard delete clears the picture's latents in Fizgig's cache
     last_folder: str = ""                 # the folder shown at start
     recent: list = field(default_factory=list)      # the folders opened lately, newest first
     lm_url: str = ""                      # the caption server (empty: http://localhost:1234)
@@ -60,6 +64,8 @@ class MonkapSettings:
         e = e if e.startswith(".") or not e else "." + e
         s.caption_ext = e if re.fullmatch(r"\.[A-Za-z0-9_]{1,12}", e) else ".txt"
         s.latent_cache_dir = str(s.latent_cache_dir or "").strip()
+        s.fizgig_dir = str(s.fizgig_dir or "").strip()
+        s.fizgig_trigger, s.fizgig_ext, s.fizgig_cache = bool(s.fizgig_trigger), bool(s.fizgig_ext), bool(s.fizgig_cache)
         s.last_folder = str(s.last_folder or "")
         s.recent = [str(x) for x in s.recent if isinstance(x, str)][:12] if isinstance(s.recent, list) else []
         s.lm_url, s.lm_model = str(s.lm_url or "").strip(), str(s.lm_model or "").strip()

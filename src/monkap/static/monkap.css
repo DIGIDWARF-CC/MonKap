@@ -166,3 +166,17 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 .mk-recent > .field-hint { padding: 5px 10px 0; }
 .mk-dialog { width: min(600px, calc(100vw - 32px)); }
 .w-num { width: 90px; }
+
+/* settings tabs */
+.mk-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; flex-wrap: wrap; }
+.mk-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); padding: 7px 12px;
+  font: 600 13px var(--font-family); cursor: pointer; margin-bottom: -1px; }
+.mk-tab:hover { color: var(--text-primary); }
+.mk-tab.on { color: #fff; border-bottom-color: var(--accent); }
+.mk-panes { min-height: 280px; max-height: calc(100vh - 260px); overflow-y: auto; padding-right: 4px; }
+.mk-report { margin: 6px 0 8px; padding: 8px 10px; background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 12.5px; }
+.mk-report .kv { display: flex; gap: 10px; padding: 1px 0; word-break: break-all; }
+.mk-report .kv .k { flex: 0 0 120px; color: var(--text-secondary); }
+.mk-warn { margin-top: 10px; padding: 8px 10px; border-left: 3px solid var(--warning); background: rgba(245, 158, 11, .08);
+  color: var(--text-explain); font-size: 12.5px; line-height: 1.45; }

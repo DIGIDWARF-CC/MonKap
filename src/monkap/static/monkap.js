@@ -28,7 +28,7 @@
   // ---- small helpers -------------------------------------------------------------------------------------------
   const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
   const url = (route, o = {}) => `/api/${route}?${qs({folder: M.folder, ...o})}`;
-  const capExtNow = () => (M.settings && M.settings.caption_ext) || ".txt";
+  const capExtNow = () => M.ext || ".txt";
   const active = () => true;
   const ratioValue = () => G.ratioValue(M.ratio);
   const clamp = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
@@ -53,6 +53,7 @@
     const r = await api("/api/state");
     M.settings = r.settings;
     M.tasks = r.tasks;
+    M.ext = r.caption_ext;
     setRatio(M.settings.ratio, false);
   }
 
@@ -60,6 +61,7 @@
     const r = await api(url("list"));
     M.folder = r.folder;
     M.trigger = r.trigger || "";
+    M.ext = r.ext || M.ext;
     return r.items;
   }
 
@@ -735,15 +737,26 @@
     path.focus();
   }
 
-  // ---- settings -----------------------------------------------------------------------------------------------------
+  // ---- settings: one tab for each kind of thing ---------------------------------------------------------------------
   async function openSettings(section) {
     if (M.modal) return;
     let s, tasks;
     try { const r = await api("/api/state"); s = r.settings; tasks = r.tasks; } catch (e) { status(e.message, "err"); return; }
     const field = (key, kind = "text") => el("input", {type: kind, "data-k": key, "data-t": kind, value: s[key] === undefined ? "" : String(s[key]), spellcheck: "false"});
+    const row = (label, ...kids) => el("div", {class: "row"}, el("label", {class: "k", text: label}), ...kids);
+    const hint = (t) => el("div", {class: "field-hint", text: t});
+    const err = el("div", {class: "field-hint warn"});
+    const radio = (name, value, label, h) => el("label", {class: "opt"},
+      el("input", {type: "radio", name, value, checked: s[name] === value}),
+      el("span", {}, label, h ? hint(h) : null));
+    const tick = (key, label, h) => el("label", {class: "opt"},
+      el("input", {type: "checkbox", "data-k": key, checked: !!s[key]}),
+      el("span", {}, label, h ? hint(h) : null));
+    const h3 = (t) => el("h3", {text: t, style: "margin:14px 0 4px"});
+
+    // -- general: names and caption files
     const tpl = field("template");
     const eg = el("div", {class: "eg"});
-    const err = el("div", {class: "field-hint warn"});
     const preview = debounce(async () => {
       const r = await api("/api/template?t=" + encodeURIComponent(tpl.value)).catch(() => null);
       if (!r) return;
@@ -751,19 +764,32 @@
       eg.textContent = r.ok ? "Example: " + r.examples.join(", ") + " …" + (r.note ? "\n" + r.note : "") : r.error;
     }, 200);
     tpl.addEventListener("input", preview); preview();
-    const radio = (name, value, label, hint) => el("label", {class: "opt"},
-      el("input", {type: "radio", name, value, checked: s[name] === value}),
-      el("span", {}, label, hint ? el("div", {class: "field-hint", text: hint}) : null));
-    const tick = (key, label, hint) => el("label", {class: "opt"},
-      el("input", {type: "checkbox", "data-k": key, checked: !!s[key]}),
-      el("span", {}, label, hint ? el("div", {class: "field-hint", text: hint}) : null));
-    const h3 = (t) => el("h3", {text: t, style: "margin:14px 0 4px"});
+    const general = [
+      row("Names of new pictures:", tpl), eg,
+      hint("{parent} is the picture's name, {n} the next free number ({n:03d} pads it to three digits). A number is never used twice, even after a crop is deleted."),
+      row("Caption files end in:", field("caption_ext")),
+      hint(".txt unless your trainer reads another extension. Ignored while MonKap follows Fizgig's (see the Fizgig tab)."),
+      h3("A new picture's caption"),
+      radio("caption_mode", "copy", "Copy the original's caption", "Edit it afterwards: the crop is flagged until you do."),
+      radio("caption_mode", "trigger", "Copy it, with the trigger word first", "The trigger word of the folder (set when you open it)."),
+      radio("caption_mode", "empty", "No caption", "The new picture has no caption file until it gets one."),
+      h3("Other"),
+      tick("store_provenance", "Remember where each crop came from", "A note in the folder's .monkap/provenance.jsonl; it is never a caption."),
+      tick("show_thirds", "Rule-of-thirds lines in the frame")];
 
-    // the caption model: its server, the model, the task and what the task tells the model
+    // -- deleting
+    const deleting = [
+      radio("delete_mode", "soft", "Move it to the folder's removed/ folder", "With Undo. Recommended."),
+      radio("delete_mode", "hard", "Erase it for good", "The picture and its caption. No Undo."),
+      tick("confirm_delete", "Ask before deleting", "Enter confirms, Esc cancels."),
+      row("Latent cache folder:", field("latent_cache_dir")),
+      hint("Optional. A trainer's cache of the pictures' latents: erasing a picture for good also clears its files there, so a new picture can't meet old ones. Ignored while MonKap follows Fizgig's cache.")];
+
+    // -- the caption model: its server, the model, the task and what the task tells the model
     const url = field("lm_url");
     url.placeholder = "http://localhost:1234";
     const model = el("select", {"data-k": "lm_model", "data-t": "select"});
-    const found = el("div", {class: "field-hint"});
+    const found = hint("");
     async function loadModels() {
       found.textContent = "Asking the server…";
       let r;
@@ -777,74 +803,82 @@
         (r.models.length ? `${r.models.length} model${r.models.length > 1 ? "s" : ""} that can see pictures. ` : "The server has no model that can see pictures. ") +
         "The pictures are sent to this address, so use one you trust.";
     }
-    const task = el("select", {"data-k": "ai_task", "data-t": "select"},
-      tasks.map((t) => el("option", {value: t.key, text: t.label})));
+    const task = el("select", {"data-k": "ai_task", "data-t": "select"}, tasks.map((t) => el("option", {value: t.key, text: t.label})));
     task.value = tasks.some((t) => t.key === s.ai_task) ? s.ai_task : "training";
     const instr = el("textarea", {rows: "7", style: "width:100%"});
+    const instrNote = el("span", {class: "field-hint"});
+    const showInstr = () => { const t = tasks.find((x) => x.key === task.value); instr.value = t.instruction; instrNote.textContent = t.edited ? "Edited." : "As shipped."; };
+    const sendInstr = async (text, done) => {
+      try { const r = await api("/api/ai/instruction", {key: task.value, text}); tasks = r.tasks; M.tasks = r.tasks; showInstr(); instrNote.textContent = done; }
+      catch (e) { instrNote.textContent = e.message; }
+    };
     const instrBox = el("div", {style: "display:none"}, instr,
       el("div", {class: "row"},
-        el("button", {class: "btn btn-sm", text: "Save instruction", onclick: async () => {
-          try {
-            const r = await api("/api/ai/instruction", {key: task.value, text: instr.value});
-            tasks = r.tasks; M.tasks = r.tasks; showInstr(); instrNote.textContent = "Saved.";
-          } catch (e) { instrNote.textContent = e.message; }
-        }}),
-        el("button", {class: "btn btn-sm", text: "Back to the shipped text", onclick: async () => {
-          const t = tasks.find((x) => x.key === task.value);
-          instr.value = t.builtin;
-          try { const r = await api("/api/ai/instruction", {key: task.value, text: ""}); tasks = r.tasks; M.tasks = r.tasks; instrNote.textContent = "Back to the shipped text."; }
-          catch (e) { instrNote.textContent = e.message; }
-        }})));
-    const instrNote = el("span", {class: "field-hint"});
-    instrBox.lastChild.append(instrNote);
-    const showInstr = () => { const t = tasks.find((x) => x.key === task.value); instr.value = t.instruction; instrNote.textContent = t.edited ? "Edited." : "As shipped."; };
+        el("button", {class: "btn btn-sm", text: "Save instruction", onclick: () => sendInstr(instr.value, "Saved.")}),
+        el("button", {class: "btn btn-sm", text: "Back to the shipped text", onclick: () => sendInstr("", "Back to the shipped text.")}),
+        instrNote));
     const edit = el("button", {class: "btn btn-sm", text: "Edit instruction…", onclick: () => {
       const open = instrBox.style.display === "none";
       instrBox.style.display = open ? "" : "none";
       if (open) showInstr();
     }});
-    task.addEventListener("change", () => { if (instrBox.style.display !== "none") showInstr(); const t = tasks.find((x) => x.key === task.value); tokens.value = t.tokens; });
     const tokens = field("ai_max_tokens", "number");
     tokens.className = "w-num"; tokens.min = "16"; tokens.max = "4000";
-
-    const forgetNote = el("div", {class: "field-hint"});
-    const save = el("button", {class: "btn btn-primary", text: "Save"});
-    const cancel = el("button", {class: "btn", text: "Cancel"});
-    const content = [
-      el("h2", {text: "MonKap settings"}),
-      el("div", {class: "row"}, el("label", {class: "k", text: "Names of new pictures:"}), tpl),
-      eg, el("div", {class: "field-hint", text: "{parent} is the picture's name, {n} the next free number ({n:03d} pads it to three digits). A number is never used twice, even after a crop is deleted."}),
-      el("div", {class: "row"}, el("label", {class: "k", text: "Caption files end in:"}), field("caption_ext")),
-      el("div", {class: "field-hint", text: ".txt unless your trainer reads another extension."}),
-      h3("A new picture's caption"),
-      radio("caption_mode", "copy", "Copy the original's caption", "Edit it afterwards: the crop is flagged until you do."),
-      radio("caption_mode", "trigger", "Copy it, with the trigger word first", "The trigger word of the folder (set when you open it)."),
-      radio("caption_mode", "empty", "No caption", "The new picture has no caption file until it gets one."),
-      h3("Deleting a picture"),
-      radio("delete_mode", "soft", "Move it to the folder's removed/ folder", "With Undo. Recommended."),
-      radio("delete_mode", "hard", "Erase it for good", "The picture and its caption. No Undo."),
-      tick("confirm_delete", "Ask before deleting", "Enter confirms, Esc cancels."),
-      el("div", {class: "row"}, el("label", {class: "k", text: "Latent cache folder:"}), field("latent_cache_dir")),
-      el("div", {class: "field-hint", text: "Optional. A trainer's cache of the pictures' latents: erasing a picture for good also clears its files there, so a new picture can't meet old ones."}),
-      h3("Caption model"),
-      el("div", {class: "row"}, el("label", {class: "k", text: "Server:"}), url, el("button", {class: "btn btn-sm", text: "Refresh", onclick: loadModels})),
-      el("div", {class: "row"}, el("label", {class: "k", text: "Model:"}), model), found,
-      el("div", {class: "row"}, el("label", {class: "k", text: "Task:"}), task, edit), instrBox,
-      el("div", {class: "row"}, el("label", {class: "k", text: "Max tokens:"}), tokens,
-        el("span", {class: "field-hint", text: "How long a caption may be."})),
+    task.addEventListener("change", () => {
+      if (instrBox.style.display !== "none") showInstr();
+      const t = tasks.find((x) => x.key === task.value);
+      tokens.value = t.tokens;
+    });
+    const captioning = [
+      row("Server:", url, el("button", {class: "btn btn-sm", text: "Refresh", onclick: loadModels})),
+      row("Model:", model), found,
+      row("Task:", task, edit), instrBox,
+      row("Max tokens:", tokens, hint("How long a caption may be.")),
       tick("ai_think", "Let the model think first", "Slower, and the answer needs more room. Most models caption better and faster without it."),
-      el("div", {class: "field-hint", text: "Any server with LM Studio's or OpenAI's API works (LM Studio, Ollama, llama.cpp, vLLM…)."}),
-      h3("Other"),
-      tick("store_provenance", "Remember where each crop came from", "A note in the folder's .monkap/provenance.jsonl; it is never a caption."),
-      tick("show_thirds", "Rule-of-thirds lines in the frame"),
-      el("div", {class: "row"}, el("button", {class: "btn btn-sm", text: "What does MonKap keep on this computer?", onclick: showData})),
-      forgetNote,
-      err, el("div", {class: "buttons"}, cancel, save)];
+      hint("Any server with LM Studio's or OpenAI's API works (LM Studio, Ollama, llama.cpp, vLLM…).")];
+
+    // -- Fizgig: a read-only look at an install, for the few things it knows
+    const fdir = field("fizgig_dir");
+    fdir.placeholder = "The folder with fizgig.py in it";
+    const report = el("div", {class: "mk-report"});
+    async function checkFizgig() {
+      report.replaceChildren();
+      const d = fdir.value.trim();
+      if (!d) return;
+      let r;
+      try { r = await api("/api/fizgig?dir=" + encodeURIComponent(d)); } catch (e) { r = {ok: false, error: e.message}; }
+      if (!r.ok) { report.append(el("div", {class: "field-hint warn", text: r.error})); return; }
+      const line = (k, v) => el("div", {class: "kv"}, el("span", {class: "k", text: k}), el("span", {text: v || "—"}));
+      report.append(
+        line("Fizgig", r.version ? `version ${r.version}` : "version unknown"),
+        line("Training folder", r.training_folder),
+        line("Trigger words", `${r.triggers} folder${r.triggers === 1 ? "" : "s"}` + (r.trigger_here ? `, here: ${r.trigger_here}` : "")),
+        line("Caption extension", r.caption_ext),
+        line("Latent cache", r.cache_root),
+        line("LoRA output", r.output_dir));
+      if (r.note) report.append(el("div", {class: "field-hint warn", text: r.note}));
+    }
+    fdir.addEventListener("change", checkFizgig);
+    const browseF = nativePicker() ? el("button", {class: "btn btn-sm", text: "Browse…", onclick: async () => {
+      const got = await window.pywebview.api.pick_folder(fdir.value.trim());
+      if (got) { fdir.value = got; checkFizgig(); }
+    }}) : null;
+    const fizgig = [
+      hint("Optional. Point MonKap at a Fizgig install and it reads a few things from it, instead of asking you twice."),
+      row("Fizgig folder:", fdir, browseF, el("button", {class: "btn btn-sm", text: "Check", onclick: checkFizgig})),
+      report,
+      tick("fizgig_trigger", "Use Fizgig's trigger word", "For a folder that has none set in MonKap."),
+      tick("fizgig_ext", "Use Fizgig's Caption Extension", "So the captions are the files its training reads."),
+      tick("fizgig_cache", "Clear Fizgig's cached latents when a picture is erased for good", "Only the latents of that picture, in the folder Fizgig keeps for this dataset."),
+      el("div", {class: "mk-warn", text: "This reads Fizgig's own files (user_data, its release notes), and never writes to them. It depends on the Fizgig version: if Fizgig changes how it stores folders or settings, it can stop working, and MonKap just goes back to its own settings. Watch for MonKap updates after Fizgig updates."})];
+
+    // -- what MonKap keeps
+    const dataNote = el("div", {class: "field-hint"});
     async function showData() {
       try {
         const r = await api("/api/data");
         const total = r.files.reduce((a, f) => a + f[1], 0);
-        forgetNote.replaceChildren(
+        dataNote.replaceChildren(
           el("div", {text: `MonKap's own files: ${r.root}  (${r.files.length} file${r.files.length === 1 ? "" : "s"}, ${Math.max(1, Math.round(total / 1024))} KB: your settings and the folders you opened).`}),
           el("div", {text: "Inside a dataset folder MonKap keeps a hidden .monkap folder (the crop ledger and caption backups), and nothing else besides the pictures and captions you asked for. Pictures, previews and tiles are made in memory and never written out. Deleting files from a disk doesn't guarantee they can't be recovered."}),
           (() => {
@@ -853,13 +887,30 @@
             b.addEventListener("click", async () => {
               if (!armed) { armed = true; b.textContent = "Click again: settings and the list of opened folders are deleted (datasets are not touched)"; return; }
               const x = await api("/api/data/forget", {});
-              forgetNote.textContent = `Removed ${x.removed} file(s). The page keeps working with the defaults.`;
+              dataNote.textContent = `Removed ${x.removed} file(s). The page keeps working with the defaults.`;
             });
             return b;
           })());
-      } catch (e) { forgetNote.textContent = e.message; }
+      } catch (e) { dataNote.textContent = e.message; }
     }
-    const {veil, done} = dialog(content);
+    const data = [el("div", {class: "row"}, el("button", {class: "btn btn-sm", text: "What does MonKap keep on this computer?", onclick: showData})), dataNote];
+
+    // -- the tabs
+    const tabs = [["general", "General", general], ["captions", "Captions", captioning], ["deleting", "Deleting", deleting],
+      ["fizgig", "Fizgig", fizgig], ["data", "Data", data]];
+    const panes = tabs.map(([key, , nodes]) => el("div", {class: "mk-pane", "data-pane": key, style: "display:none"}, nodes));
+    const bar = el("div", {class: "mk-tabs", role: "tablist"});
+    const show = (key) => {
+      for (const [k] of tabs) {
+        bar.querySelector(`[data-tab="${k}"]`).classList.toggle("on", k === key);
+        panes.find((p) => p.dataset.pane === k).style.display = k === key ? "" : "none";
+      }
+    };
+    for (const [key, label] of tabs) bar.append(el("button", {type: "button", class: "mk-tab", "data-tab": key, text: label, onclick: () => show(key)}));
+    const save = el("button", {class: "btn btn-primary", text: "Save"});
+    const cancel = el("button", {class: "btn", text: "Cancel"});
+    const {veil, done} = dialog([el("h2", {text: "MonKap settings"}), bar, el("div", {class: "mk-panes"}, panes), err,
+      el("div", {class: "buttons"}, cancel, save)]);
     const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
     const close = () => { document.removeEventListener("keydown", onKey, true); done(); };
     document.addEventListener("keydown", onKey, true);
@@ -872,15 +923,16 @@
       for (const i of veil.querySelectorAll("[data-t]")) next[i.dataset.k] = i.dataset.t === "number" ? Number(i.value) : i.value;
       try {
         const r = await api("/api/settings", {settings: next});
-        M.settings = r.settings; M.tasks = r.tasks;
-        redraw();
-        syncButtons();
+        M.settings = r.settings; M.tasks = r.tasks; M.ext = r.caption_ext;
         close();
         status(r.note || "Settings saved.", r.note ? "warn" : "ok");
+        await refreshList().catch(() => {});                  // the caption extension or the trigger word may have changed
+        redraw(); syncButtons();
       } catch (e) { err.textContent = e.message; }
     });
-    loadModels().then(() => { if (section === "ai") { model.scrollIntoView({block: "center"}); model.focus(); } });
-    if (section !== "ai") tpl.focus();
+    show(section === "ai" ? "captions" : "general");
+    loadModels().then(() => { if (section === "ai") model.focus(); });
+    if (s.fizgig_dir) checkFizgig();
   }
 
   // ---- keys -----------------------------------------------------------------------------------------------------

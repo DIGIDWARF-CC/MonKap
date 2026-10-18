@@ -3,7 +3,9 @@ of each) in one application folder. Pictures, previews and tiles are made in mem
 writes into a dataset is a `.monkap` folder (the crop ledger and caption backups) and the pictures and captions you
 ask for.
 
-The folder is MONKAP_HOME when that is set, else the platform's usual place for application data.
+The installed program keeps them in `user_data` next to MonKap.exe, so deleting the program's folder removes everything.
+Run from source, or when that folder can't be written, the platform's usual place for application data is used. The
+folder in MONKAP_HOME wins over both.
 """
 from __future__ import annotations
 
@@ -15,10 +17,26 @@ import sys
 from .core.fsutil import write_text_atomic
 
 
+def _writable(folder: str) -> bool:
+    try:
+        os.makedirs(folder, exist_ok=True)
+        probe = os.path.join(folder, ".write-test")
+        with open(probe, "w") as f:
+            f.write("")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
 def root() -> str:
     env = os.environ.get("MONKAP_HOME", "").strip()
     if env:
         return os.path.abspath(env)
+    if getattr(sys, "frozen", False):                  # the installed program: next to MonKap.exe
+        beside = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "user_data")
+        if _writable(beside):
+            return beside
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
         return os.path.join(base, "MonKap")
