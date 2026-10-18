@@ -180,3 +180,16 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 .mk-report .kv .k { flex: 0 0 120px; color: var(--text-secondary); }
 .mk-warn { margin-top: 10px; padding: 8px 10px; border-left: 3px solid var(--warning); background: rgba(245, 158, 11, .08);
   color: var(--text-explain); font-size: 12.5px; line-height: 1.45; }
+
+/* what a training run found out */
+.mk-review { display: flex; flex-direction: column; gap: 4px; }
+.mk-review select { width: 100%; padding: 3px 6px; font-size: 12px; }
+.vd { display: inline-block; padding: 0 8px; border-radius: 999px; color: #fff; font: 700 11px/18px var(--font-family); white-space: nowrap; }
+.mk-th .vd { position: absolute; left: 4px; top: 4px; pointer-events: none; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+.mk-verdict { padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-inset);
+  font-size: 12.5px; line-height: 1.5; color: var(--text-explain); }
+.mk-verdict .todo { color: var(--text-secondary); }
+.mk-more { margin-left: 8px; border: 0; background: transparent; color: var(--accent-hover); cursor: pointer; font-size: 12px; padding: 0; }
+.mk-more:hover { text-decoration: underline; }
+.vd-row { display: flex; gap: 10px; align-items: flex-start; margin: 7px 0; font-size: 13px; }
+.vd-row .vd { flex: 0 0 92px; text-align: center; margin-top: 1px; }

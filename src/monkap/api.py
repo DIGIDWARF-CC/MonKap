@@ -15,7 +15,7 @@ from PIL import Image
 from . import __version__, appdata, dataset
 from .ai import lmstudio, tasks
 from .core import captions, jobs, ledger
-from .integrations import fizgig
+from .integrations import fizgig, fizgig_review
 from .core.fsutil import IMAGE_EXTS
 from .core.naming import TemplateError, example_names, normalize_template
 from .core.settings import CAPTION_MODES, DELETE_MODES, DELETE_SOFT, RATIO_NAMES, MonkapSettings
@@ -178,6 +178,29 @@ def delete(folder, name, ext) -> dict:
     return {"mode": "hard", "purged": res.purged, "notes": res.notes}
 
 
+# ------------------------------------------------------------------------------------------------ the training review
+
+def review(folder: str) -> dict:
+    """What Fizgig's newest run on this folder found out about each picture (by file name), with the legend and advice."""
+    s = load_settings()
+    base = {"legend": fizgig_review.legend()}
+    if not s.fizgig_dir:
+        return {**base, "available": False, "reason": "Set the Fizgig folder in the settings (the Fizgig tab) to see what a training run found out."}
+    rev = fizgig_review.review(s.fizgig_dir, os.path.abspath(folder))
+    if not rev.get("available"):
+        return {**base, **rev}
+    names = {os.path.splitext(n)[0]: n for n, _c in dataset.list_folder(folder, effective_ext(s))}
+    verdicts = {}
+    for key, v in rev["images"].items():
+        name = names.get(key)
+        if name and v["verdict"] in fizgig_review.VERDICTS:
+            label, color, means, todo = fizgig_review.VERDICTS[v["verdict"]]
+            verdicts[name] = {**v, "label": label, "color": color, "means": means, "todo": todo}
+    counts = {k: sum(1 for v in verdicts.values() if v["verdict"] == k) for k in fizgig_review.ORDER}
+    return {**base, "available": True, "run": rev["run"], "report": rev["report"], "settings": rev["settings"],
+            "verdicts": verdicts, "counts": counts, "advice": fizgig_review.advice(rev)}
+
+
 # ------------------------------------------------------------------------------------------------ the caption model
 
 def models(url=None) -> dict:
@@ -241,6 +264,8 @@ def get(h, path, qs) -> None:
             return h.json({"ok": True, "template": tpl, "note": note, "examples": example_names(tpl)})
         if path == "/api/browse":
             return h.json(browse(one("path")))
+        if path == "/api/review":
+            return h.json(review(os.path.abspath(one("folder"))))
         if path == "/api/fizgig":
             return h.json(fizgig.summary(qs["dir"][0] if "dir" in qs else load_settings().fizgig_dir))
         if path == "/api/ai/models":

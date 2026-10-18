@@ -17,7 +17,7 @@
     cur: null,                           // the open picture: {name, iw, ih, bmp, loaded, inherited}
     frame: null, ratio: "1:1", view: new View(), fitMode: true, tile: null,
     dirty: false, busy: false, loadToken: 0, tileSeq: 0, thumbs: new Map(), bitmaps: new Map(),
-    modal: null, lastDelete: null,
+    modal: null, lastDelete: null, review: null, raw: [],
   };
   let regen = false;                     // Regenerate (AI) is running
   const $q = (id) => document.getElementById(id);
@@ -48,6 +48,99 @@
   }
   function message(msg) { $q("mkMsg").textContent = msg || ""; }
 
+  // ---- what a training run found out (Fizgig's per-image loss watch) ---------------------------------------------------
+  const verdictOf = (name) => (M.review && M.review.available && M.review.verdicts[name]) || null;
+
+  async function loadReview() {
+    M.review = null;
+    if (M.folder && M.settings && M.settings.fizgig_dir) {
+      try { M.review = await api(url("review")); } catch (e) { M.review = null; }
+    }
+    const rv = M.review;
+    const on = !!(rv && rv.available);
+    $q("mkReview").style.display = on ? "" : "none";
+    if (!on) { $q("mkShow").value = "all"; return; }
+    const keep = $q("mkShow").value;
+    const opts = [["all", `All pictures (${M.raw.length || Object.keys(rv.verdicts).length})`],
+      ["problems", `Problems (${["excluded", "stuck", "suspect", "watch"].reduce((a, k) => a + (rv.counts[k] || 0), 0)})`]];
+    for (const l of rv.legend) if (rv.counts[l.key]) opts.push([l.key, `${l.label} (${rv.counts[l.key]})`]);
+    $q("mkShow").replaceChildren(...opts.map(([v, t]) => el("option", {value: v, text: t})));
+    $q("mkShow").value = opts.some(([v]) => v === keep) ? keep : "all";
+  }
+
+  const ORDER = ["excluded", "stuck", "suspect", "watch", "warmup", "exhausted", "learning", "mid", "easy"];
+  const PROBLEMS = ["excluded", "stuck", "suspect", "watch"];
+
+  // the list as the review's "Show" and "Sort" ask for it (a picture the run never saw sorts last)
+  function arrange(items) {
+    const rv = M.review && M.review.available ? M.review.verdicts : null;
+    if (!rv) return items;
+    const show = $q("mkShow").value, sort = $q("mkSort").value;
+    let out = items.slice();
+    if (show === "problems") out = out.filter((it) => rv[it[0]] && PROBLEMS.includes(rv[it[0]].verdict));
+    else if (show !== "all") out = out.filter((it) => rv[it[0]] && rv[it[0]].verdict === show);
+    const hard = (it) => (rv[it[0]] ? rv[it[0]].recent : -9);
+    const rank = (it) => (rv[it[0]] ? ORDER.indexOf(rv[it[0]].verdict) : 99);
+    if (sort === "hard") out.sort((a, b) => hard(b) - hard(a));
+    else if (sort === "verdict") out.sort((a, b) => rank(a) - rank(b) || hard(b) - hard(a));
+    return out;
+  }
+
+  function verdictChip(name) {
+    const v = verdictOf(name);
+    if (!v) return null;
+    return el("span", {class: "vd", text: v.label, style: `background:${v.color}`, title: `${v.label}: ${v.means}`});
+  }
+
+  function showVerdict(name) {
+    const box = $q("mkVerdict"), v = name ? verdictOf(name) : null;
+    box.style.display = v ? "" : "none";
+    if (!v) return;
+    box.replaceChildren(
+      el("span", {class: "vd", text: v.label, style: `background:${v.color}`}),
+      el("span", {class: "mean", text: ` ${v.means} `}),
+      el("span", {class: "todo", text: v.todo}),
+      el("button", {type: "button", class: "mk-more", text: "All verdicts…", onclick: openReviewHelp}));
+  }
+
+  function openReviewHelp() {
+    if (M.modal) return;
+    const rv = M.review;
+    const run = rv && rv.available ? rv.run : null;
+    const rows = (rv ? rv.legend : []).map((l) => el("div", {class: "vd-row"},
+      el("span", {class: "vd", text: l.label, style: `background:${l.color}`}),
+      el("div", {}, el("div", {text: l.means}), el("div", {class: "field-hint", text: "What to do: " + l.todo}))));
+    const when = run && run.started_at ? new Date(run.started_at * 1000).toLocaleString() : "";
+    const close = el("button", {class: "btn btn-primary", text: "Close"});
+    const {veil, done} = dialog([
+      el("h2", {text: "What the training run found out"}),
+      run ? el("p", {class: "lead", text: `The run "${run.lora}" (${run.family}, ${run.epochs || "?"} epochs${when ? ", " + when : ""}). ` +
+        "Each picture's verdict is Fizgig's loss watch's, from how hard the picture was for the model compared with the others at the same noise level."}) : null,
+      ...rows,
+      rv && rv.advice && rv.advice.length ? el("h3", {text: "What to try", style: "margin:14px 0 4px"}) : null,
+      ...(rv && rv.advice ? rv.advice.map((t) => el("p", {class: "lead", text: "• " + t})) : []),
+      el("div", {class: "field-hint", text: "This reads Fizgig's own files and depends on its version; the setting names are as in Fizgig 8.5."}),
+      el("div", {class: "buttons"}, close)]);
+    const onKey = (e) => { if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); shut(); } };
+    const shut = () => { document.removeEventListener("keydown", onKey, true); done(); };
+    document.addEventListener("keydown", onKey, true);
+    close.addEventListener("click", shut);
+    veil.addEventListener("mousedown", (e) => { if (e.target === veil) shut(); });
+    close.focus();
+  }
+
+  // Show / Sort changed: the list again in the new order, the open picture kept when it is still there
+  async function rearrange() {
+    const cur = M.cur ? M.cur.name : null;
+    M.items = arrange(M.raw);
+    M.index = cur ? M.items.findIndex((it) => it[0] === cur) : -1;
+    drawStrip(true);
+    scrollStripTo(M.index);
+    syncButtons();
+    if (M.index < 0 && M.items.length) await open(0);
+    else if (!M.items.length) { closePicture(); message("No pictures with that verdict. Change \"Show\" above the list."); }
+  }
+
   // ---- the folder and its filmstrip ------------------------------------------------------------------------
   async function loadSettings() {
     const r = await api("/api/state");
@@ -62,7 +155,8 @@
     M.folder = r.folder;
     M.trigger = r.trigger || "";
     M.ext = r.ext || M.ext;
-    return r.items;
+    M.raw = r.items;
+    return arrange(r.items);
   }
 
   async function loadFolder(select) {
@@ -73,11 +167,12 @@
     if (!M.folder) { message("Open a folder of pictures (the link above)."); M.items = []; drawStrip(true); return; }
     try {
       if (!M.settings) await loadSettings();
+      await loadReview();
       M.items = await fetchList();
     } catch (e) { M.items = []; message(e.message); drawStrip(true); return; }
     drawStrip(true);
     $q("mkChange").textContent = folderLabel();
-    if (!M.items.length) { message("No pictures in this folder (png, jpg, webp, bmp, avif)."); return; }
+    if (!M.items.length) { message(M.raw.length ? "No pictures with that verdict. Change \"Show\" above the list." : "No pictures in this folder (png, jpg, webp, bmp, avif)."); return; }
     const i = select ? M.items.findIndex((it) => it[0] === select) : 0;
     await open(Math.max(0, i));
   }
@@ -111,7 +206,7 @@
       }});
       const node = el("div", {class: "mk-th" + (i === M.index ? " cur" : ""), onclick: () => go(i - M.index)},
         el("img", {src: url("thumb", {name}), alt: "", draggable: "false"}),
-        el("span", {class: "pill" + (has ? " has" : ""), text: "Empty caption"}), info);
+        el("span", {class: "pill" + (has ? " has" : ""), text: "Empty caption"}), verdictChip(name), info);
       node.style[h ? "left" : "top"] = (i * p + 4) + "px";
       stripIn.append(node);
       M.thumbs.set(i, node);
@@ -193,6 +288,7 @@
     badge.textContent = "↳ copied from the original - check that it fits this crop";
     badge.style.display = info.inherited ? "" : "none";
     status("");
+    showVerdict(name);
     resize();                                     // also fits the view and draws
     updateMode(); syncButtons();
     focusHome();
@@ -926,6 +1022,7 @@
         M.settings = r.settings; M.tasks = r.tasks; M.ext = r.caption_ext;
         close();
         status(r.note || "Settings saved.", r.note ? "warn" : "ok");
+        await loadReview().catch(() => {});
         await refreshList().catch(() => {});                  // the caption extension or the trigger word may have changed
         redraw(); syncButtons();
       } catch (e) { err.textContent = e.message; }
@@ -986,6 +1083,9 @@
     if (open) { drawStrip(true); scrollStripTo(M.index); }
   });
   $q("mkRegen").addEventListener("click", regenerate);
+  $q("mkShow").addEventListener("change", rearrange);
+  $q("mkSort").addEventListener("change", rearrange);
+  $q("mkLegend").addEventListener("click", (e) => { e.preventDefault(); openReviewHelp(); });
   strip.addEventListener("scroll", drawStripSoon);
   strip.addEventListener("wheel", (e) => {                        // in a row the wheel scrolls sideways
     if (horizontal()) { e.preventDefault(); strip.scrollLeft += e.deltaY + e.deltaX; }
@@ -1026,6 +1126,7 @@
   // picture's caption are read again - a caption being typed is left alone
   async function refreshOnShow() {
     if (!M.folder) return;
+    await loadReview();
     await refreshList();
     triggerState();
     const c = M.cur;

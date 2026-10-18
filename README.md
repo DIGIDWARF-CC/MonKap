@@ -37,6 +37,8 @@ monkap
 
 Optional. In the settings, the Fizgig tab takes the folder of a [Fizgig](https://github.com/shootthesound/Fizgig) install, and MonKap reads a few things from it instead of asking you twice: the trigger word of a folder, the Caption Extension, and where Fizgig keeps its latent cache (so erasing a picture for good also clears its latents). MonKap only reads Fizgig's files and never writes to them.
 
+**Training review.** With the Fizgig folder set, and once a Fizgig run has trained on the folder you have open, MonKap reads that run's per-image loss watch and shows it where you work: a coloured label on each picture (Stuck, Suspect, Learning, Learned…), the verdict and what to do about it under the caption, a list you can filter ("Problems") and sort ("Hardest first"), and a page that explains every label and, from the run's own settings, which of Fizgig's options could help (auto-recaption, per-image LR, where learning finished). It shows no charts: Fizgig's Runs page has them.
+
 This depends on the Fizgig version. It was checked against Fizgig 8.5.9, and if Fizgig changes how it stores folders or settings it can stop working (MonKap then falls back to its own settings). Watch for MonKap updates after Fizgig updates.
 
 ## What it keeps on your computer

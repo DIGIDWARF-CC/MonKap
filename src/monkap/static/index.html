@@ -30,6 +30,7 @@
         <span class="mk-badge" id="mkBadge" style="display:none"></span>
       </div>
       <div class="field-hint mk-status" id="mkStatus"></div>
+      <div class="mk-verdict" id="mkVerdict" style="display:none"></div>
     </div>
     <div class="mk-actions">
       <button class="btn" id="mkPrev" title="Previous picture (PgUp)"><svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span class="lbl">Prev</span><kbd>PgUp</kbd></button>
@@ -47,6 +48,13 @@
       <button class="mk-q" id="mkSettings" title="Names of the new pictures, captions, delete mode" aria-label="Settings">⚙</button>
     </div>
     <a href="#" class="mk-change" id="mkChange">Change folder…</a>
+    <div class="mk-review" id="mkReview" style="display:none">
+      <select id="mkShow" title="Which pictures to list"><option value="all">All pictures</option></select>
+      <select id="mkSort" title="The order of the list">
+        <option value="name">By name</option><option value="hard">Hardest first</option><option value="verdict">By verdict</option>
+      </select>
+      <a href="#" id="mkLegend" class="mk-change">What do the labels mean?</a>
+    </div>
     <button class="btn btn-sm mk-drawer" id="mkDrawer" aria-expanded="false">Pictures ▾</button>
     <div class="mk-strip" id="mkStrip" aria-label="Pictures in the folder"><div class="mk-strip-in" id="mkStripIn"></div></div>
   </aside>
