@@ -58,6 +58,14 @@
     }
     const rv = M.review;
     const on = !!(rv && rv.available);
+    // Fizgig is set up but gives no verdicts for this folder: say why, instead of showing nothing
+    const note = $q("mkReviewNote"), fz = !!(M.folder && M.settings && M.settings.fizgig_dir);
+    const text = !fz || !rv ? "" : !on ? "Training verdicts: " + rv.reason
+      : rv.run.relocated ? "Verdicts read from this Fizgig's output folder: the run's recorded folder is gone (Fizgig was moved?)."
+      : rv.run.loose ? "Verdicts from a run on a folder with this name, but at another path (the pictures were moved?)." : "";
+    note.textContent = text;
+    note.classList.toggle("warn", !on);
+    note.style.display = text ? "" : "none";
     $q("mkReview").style.display = on ? "" : "none";
     if (!on) { $q("mkShow").value = "all"; return; }
     const keep = $q("mkShow").value;

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 
+from . import fizgig
 from .fizgig import _json, looks_like_fizgig
 
 N_BUCKETS = 40                              # the watch's own noise-level buckets (training/loss_logger.py)
@@ -65,18 +66,73 @@ def _started(run) -> float:
         return 0.0
 
 
-def find_run(dir_: str, folder: str):
-    """The newest run that trained on `folder` and left a per-image log (None when there is none)."""
-    best = None
+def _leaf(path) -> str:
+    """The last part of a path written on any system (the run may have been recorded on another PC)."""
+    return str(path or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def _log_of(out: str) -> str:
+    return os.path.join(out, "loss_log", "per_image_loss.jsonl")
+
+
+def _output_of(dir_: str, run: dict):
+    """Where this run's results are now: the recorded folder when it is still there, else a folder of the same name
+    in the output folder of this Fizgig (the install was moved or copied, and runs.json still holds the old paths).
+    (path, relocated); ('', False) when it can't be found."""
+    rec = str(run.get("output_dir") or "")
+    if rec and os.path.isfile(_log_of(rec)):
+        return rec, False
+    leaf = _leaf(rec)
+    if leaf:
+        for root in dict.fromkeys((fizgig.output_dir(dir_), os.path.join(dir_, "output_loras"))):
+            for cand in (root if _leaf(root) == leaf else "", os.path.join(root, leaf)):    # the output folder itself, or a run's folder in it
+                if cand and os.path.isfile(_log_of(cand)):
+                    return cand, True
+    return "", False
+
+
+def _candidates(dir_: str, folder: str):
+    """Runs on this folder, best first: the same path before the same folder name (the dataset moved too), newest first."""
+    exact, loose = [], []
+    want = _leaf(folder).lower()
     for r in _runs(dir_):
-        if not isinstance(r, dict) or not _same_folder(r.get("image_folder"), folder):
+        if not isinstance(r, dict):
             continue
-        out = str(r.get("output_dir") or "")
-        if not out or not os.path.isfile(os.path.join(out, "loss_log", "per_image_loss.jsonl")):
-            continue
-        if best is None or _started(r) > _started(best):
-            best = r
-    return best
+        if _same_folder(r.get("image_folder"), folder):
+            exact.append(r)
+        elif want and _leaf(r.get("image_folder")).lower() == want:
+            loose.append(r)
+    return sorted(exact, key=_started, reverse=True), sorted(loose, key=_started, reverse=True)
+
+
+def find_run(dir_: str, folder: str):
+    """The newest run that trained on `folder` and left a per-image log, as a copy that says where the log is now
+    (`output_dir`), whether it was found elsewhere than recorded (`relocated`) and whether the run was matched by the
+    folder's name only (`loose`). None when there is none."""
+    exact, loose = _candidates(dir_, folder)
+    for group, is_loose in ((exact, False), (loose, True)):
+        for r in group:
+            out, moved = _output_of(dir_, r)
+            if out:
+                return {**r, "output_dir": out, "relocated": moved, "loose": is_loose}
+    return None
+
+
+def why_none(dir_: str, folder: str) -> str:
+    """Why `find_run` found nothing, in words that say what to look at."""
+    runs = [r for r in _runs(dir_) if isinstance(r, dict)]
+    if not runs:
+        return "Fizgig has no training runs on record (user_data/runs.json is missing or empty)."
+    exact, loose = _candidates(dir_, folder)
+    if not exact and not loose:
+        last = max(runs, key=_started)
+        return (f"None of Fizgig's {len(runs)} runs trained on this folder. The newest one used "
+                f"{last.get('image_folder') or 'an unknown folder'}.")
+    r = (exact or loose)[0]
+    rec = str(r.get("output_dir") or "")
+    return (f"A run on this folder is on record ({r.get('lora') or r.get('id') or 'unnamed'}), but its results are not in "
+            f"{rec or 'a recorded folder'} and no folder named {_leaf(rec) or '?'} is in Fizgig's output folder either. "
+            "Was the output folder moved or deleted?")
 
 
 def residuals(log_path: str) -> dict:
@@ -135,7 +191,7 @@ def review(dir_: str, folder: str) -> dict:
     run = find_run(dir_, folder) if looks_like_fizgig(dir_) else None
     if run is None:
         return {"available": False,
-                "reason": "No run of Fizgig's has trained on this folder yet (or it wrote no per-image log)."}
+                "reason": why_none(dir_, folder) if looks_like_fizgig(dir_) else "That is not a Fizgig folder."}
     out = str(run["output_dir"])
     series = residuals(os.path.join(out, "loss_log", "per_image_loss.jsonl"))
     report = _json(out, "loss_log", "problem_images.json")
@@ -152,7 +208,8 @@ def review(dir_: str, folder: str) -> dict:
     return {"available": True,
             "run": {"id": str(run.get("id") or ""), "lora": str(run.get("lora") or ""), "family": str(run.get("family") or ""),
                     "started_at": run.get("started_at"), "result": str(run.get("result") or ""),
-                    "epochs": prog.get("total_epochs"), "output_dir": out},
+                    "epochs": prog.get("total_epochs"), "output_dir": out,
+                    "relocated": bool(run.get("relocated")), "loose": bool(run.get("loose"))},
             "report": {"epoch": report.get("epoch"), "plateaued": report.get("plateaued"),
                        "best_epoch": report.get("best_epoch_estimate"), "improving": report.get("improving_count")},
             "settings": {"loss_watch": bool(values.get("KREA2_LOSS_WATCH")), "per_image_lr": bool(values.get("KREA2_PER_IMAGE_LR")),

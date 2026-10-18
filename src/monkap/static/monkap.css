@@ -215,3 +215,6 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 }
 .ok-note { color: var(--success) !important; }
 .mk-dialog input:disabled { opacity: .75; cursor: default; }
+
+.mk-rnote { overflow-wrap: anywhere; font-size: 12px; line-height: 1.35; color: var(--text-secondary); margin: 2px 0 6px; }
+.mk-rnote.warn { color: var(--warning); }

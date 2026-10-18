@@ -135,3 +135,68 @@ class LiveTests(Case):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MovedFizgigTests(Case):
+    """Fizgig moved without a reinstall: runs.json still holds the old absolute paths."""
+
+    def _runs(self, **over):
+        run = {"id": "r", "image_folder": self.ds, "output_dir": "Z:/old/Fizgig/output_loras/run1", "started_at": 5, "lora": "x"}
+        run.update(over)
+        write(os.path.join(self.fz, "user_data", "runs.json"), [run])
+
+    def _move_results(self):
+        new = os.path.join(self.fz, "output_loras", "run1")
+        os.makedirs(os.path.dirname(new))
+        os.rename(self.out, new)
+        return new
+
+    def test_results_are_found_in_this_fizgigs_output_folder_when_the_recorded_one_is_gone(self):
+        self._runs()
+        new = self._move_results()
+        run = fr.find_run(self.fz, self.ds)
+        self.assertEqual((run["output_dir"], run["relocated"], run["loose"]), (new, True, False))
+        rev = fr.review(self.fz, self.ds)
+        self.assertTrue(rev["available"] and rev["run"]["relocated"])
+        self.assertEqual(rev["images"]["b"]["verdict"], "stuck")
+        self.assertIn("|", fr.stamp(self.fz, self.ds))
+
+    def test_a_windows_path_recorded_on_another_system_still_gives_the_folder_name(self):
+        self._runs(output_dir=r"C:\Users\x\Fizgig\output_loras\run1")
+        self._move_results()
+        self.assertTrue(fr.find_run(self.fz, self.ds)["relocated"])
+
+    def test_the_output_folder_setting_is_tried_too(self):
+        self._runs()
+        write(os.path.join(self.fz, "user_data", "prefs.json"), {"lora_output_dir": "elsewhere"})
+        new = os.path.join(self.fz, "elsewhere", "run1")
+        os.makedirs(os.path.dirname(new))
+        os.rename(self.out, new)
+        self.assertEqual(fr.find_run(self.fz, self.ds)["output_dir"], new)
+
+    def test_the_same_folder_name_at_another_path_is_a_loose_match(self):
+        self._runs(image_folder="Z:/other/place/ds", output_dir=self.out)
+        run = fr.find_run(self.fz, self.ds)
+        self.assertEqual((run["relocated"], run["loose"]), (False, True))
+        self.assertTrue(fr.review(self.fz, self.ds)["run"]["loose"])
+
+    def test_the_exact_folder_wins_over_a_loose_one_even_when_older(self):
+        write(os.path.join(self.fz, "user_data", "runs.json"), [
+            {"id": "exact", "image_folder": self.ds, "output_dir": self.out, "started_at": 1},
+            {"id": "loose", "image_folder": "Z:/other/ds", "output_dir": self.out, "started_at": 9}])
+        self.assertEqual(fr.find_run(self.fz, self.ds)["id"], "exact")
+
+    def test_nothing_found_says_why(self):
+        self._runs()                                                               # results nowhere
+        self.assertIn("Was the output folder moved", fr.review(self.fz, self.ds)["reason"])
+        self.assertIn("run1", fr.review(self.fz, self.ds)["reason"])
+        elsewhere = os.path.join(self.tmp.name, "nowhere")
+        self.assertIn("None of Fizgig's 1 runs", fr.review(self.fz, elsewhere)["reason"])
+        write(os.path.join(self.fz, "user_data", "runs.json"), [])
+        self.assertIn("no training runs", fr.review(self.fz, self.ds)["reason"])
+
+    def test_a_run_that_wrote_straight_into_the_output_folder_is_found_after_the_move(self):
+        self._runs(output_dir="Z:/old/Fizgig/output_loras")
+        os.makedirs(os.path.join(self.fz, "output_loras"))
+        os.rename(os.path.join(self.out, "loss_log"), os.path.join(self.fz, "output_loras", "loss_log"))
+        self.assertEqual(fr.find_run(self.fz, self.ds)["output_dir"], os.path.join(self.fz, "output_loras"))
