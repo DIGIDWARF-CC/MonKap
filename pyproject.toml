@@ -11,8 +11,14 @@ license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.10"
 dependencies = ["Pillow>=10"]
 
+[project.optional-dependencies]
+window = ["pywebview>=5"]
+
 [project.scripts]
 monkap = "monkap.__main__:main"
+
+[project.gui-scripts]
+monkap-gui = "monkap.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -2,7 +2,7 @@
 
 A workbench for preparing image datasets: frame and crop pictures, write and edit captions by hand or with a model, and review the whole set from the keyboard.
 
-MonKap runs on your computer and opens in your browser. Pictures are never resized behind your back, and nothing is erased without a way back unless you ask for it.
+Pictures are never resized behind your back, and nothing is erased without a way back unless you ask for it.
 
 ## What it does
 
@@ -12,7 +12,15 @@ MonKap runs on your computer and opens in your browser. Pictures are never resiz
 - **Big folders and big pictures.** A virtual filmstrip (a 4000-picture folder opens in a fraction of a second), a whole-picture preview, and full-resolution tiles when you zoom in. Pinch-zoom works on touch.
 - **Delete.** Either move to the folder's `removed/` with Undo, or erase for good. Your choice in the settings.
 
-## Run it
+## Install (Windows 10 and 11)
+
+Run `MonKap-<version>-setup.exe`. It installs for your user (no administrator rights) and adds a Start menu entry.
+
+MonKap shows its page in the system's **WebView2** runtime. Windows 11 has it. On Windows 10 it usually comes with Microsoft Edge, but an old Windows 10 may only have the older web view: if the window doesn't open, install the Evergreen runtime from <https://developer.microsoft.com/microsoft-edge/webview2/>. Or use the Start menu entry **MonKap (in the browser)**, which opens the same page in your default browser instead of a window.
+
+For captions with a model, start LM Studio's server (or any compatible one), and in MonKap's settings set the address (`http://localhost:1234` is the default), press Refresh, and choose a model that can see pictures. The pictures are sent to that address, so use one you trust.
+
+## Run from source (any system)
 
 Needs Python 3.10 or newer.
 
@@ -23,18 +31,23 @@ pip install .
 monkap
 ```
 
-`monkap` prints an address with a session key and opens it in the browser. `monkap <folder>` opens a folder; `monkap --no-browser` only prints the address; `monkap --help` lists the rest. Without installing: `pip install Pillow`, then `python -m monkap` from the `src` folder.
-
-For captions with a model, start LM Studio's server (or any compatible one), and in MonKap's settings set the address (`http://localhost:1234` is the default), press Refresh, and choose a model that can see pictures. The pictures are sent to that address, so use one you trust.
+`monkap` starts the local server and opens the page in your browser. `monkap <folder>` opens a folder; `monkap --no-browser` only prints the address (for a Linux box without a browser, or to open it from another program); `monkap --help` lists the rest. `pip install ".[window]"` adds `monkap-gui`, MonKap's own window, on systems where pywebview works.
 
 ## What it keeps on your computer
 
-- Its own files, in one folder: the settings and the list of folders you opened (`%LOCALAPPDATA%\MonKap` on Windows, `~/.local/share/monkap` on Linux, `~/Library/Application Support/MonKap` on macOS, or the folder in `MONKAP_HOME`). The settings dialog shows what is there and can remove it; `monkap --forget` does the same.
-- In a dataset folder: a hidden `.monkap` folder (the crop ledger and caption backups), the pictures and captions you asked for, and `removed/` if you remove pictures.
-- Pictures, previews and tiles are made in memory and are not written out.
-- The server listens on 127.0.0.1 only and wants the session key on every request.
+MonKap's own files are the settings and the list of folders you opened: `%LOCALAPPDATA%\MonKap` on Windows, `~/.local/share/monkap` on Linux, `~/Library/Application Support/MonKap` on macOS, or the folder in `MONKAP_HOME`. The settings dialog shows what is there and can remove it; `monkap --forget` does the same, and the uninstaller asks. In a dataset folder MonKap keeps a hidden `.monkap` folder (the crop ledger and caption backups), the pictures and captions you asked for, and `removed/` if you remove pictures. Previews and tiles are made in memory.
 
-Deleting files from a disk doesn't guarantee they can't be recovered.
+The server listens on 127.0.0.1 only and wants a session key on every request. The browser keeps its usual cache for the page, as any page does.
+
+## Build the installer
+
+```bash
+python -m venv .venv
+.venv\Scripts\pip install . pywebview pyinstaller
+.venv\Scripts\python packaging\build.py
+```
+
+This makes `dist\MonKap\MonKap.exe` (a folder, so nothing unpacks itself into the temp folder on start) and, with [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed, `dist\MonKap-<version>-setup.exe`.
 
 ## Tests
 

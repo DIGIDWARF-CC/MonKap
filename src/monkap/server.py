@@ -144,7 +144,7 @@ def _free_port(start: int) -> int:
 
 def start(port=8765, token=None) -> tuple[Server, str]:
     """A server on 127.0.0.1 (the next free port from `port`), running in a thread; (server, address with the key)."""
-    token = token or secrets.token_urlsafe(24)
+    token = token or os.environ.get("MONKAP_TOKEN", "").strip() or secrets.token_urlsafe(24)     # the variable is for tests
     srv = Server(("127.0.0.1", _free_port(port)), token)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, f"http://127.0.0.1:{srv.server_address[1]}/?t={token}"

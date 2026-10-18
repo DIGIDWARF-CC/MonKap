@@ -676,6 +676,9 @@
     return parts.length ? `${parts[parts.length - 1]} · change…` : "Open a folder…";
   }
 
+  // in MonKap's own window the system's folder dialog is there (window.pywebview, set up a moment after the page loads)
+  const nativePicker = () => !!(window.pywebview && window.pywebview.api && window.pywebview.api.pick_folder);
+
   async function openFolderDialog() {
     if (M.modal) return;
     const path = el("input", {type: "text", spellcheck: "false", placeholder: "Folder path", value: M.folder || "", style: "flex:1 1 280px"});
@@ -700,7 +703,11 @@
     const recent = (M.settings && M.settings.recent) || [];
     const content = [
       el("h2", {text: "Open a folder"}),
-      el("div", {class: "row"}, path, el("button", {class: "btn", text: "Go", onclick: () => browse(path.value.trim())})),
+      el("div", {class: "row"}, path, el("button", {class: "btn", text: "Go", onclick: () => browse(path.value.trim())}),
+        nativePicker() ? el("button", {class: "btn", text: "Browse…", onclick: async () => {
+          const got = await window.pywebview.api.pick_folder(path.value.trim());
+          if (got) { path.value = got; browse(got); }
+        }}) : null),
       here, list,
       recent.length ? el("div", {class: "mk-recent"}, el("div", {class: "field-hint", text: "Opened lately:"}),
         recent.map((p) => el("button", {type: "button", class: "mk-dir", text: p, onclick: () => { path.value = p; browse(p); }}))) : null,
@@ -1001,6 +1008,11 @@
     try { await loadSettings(); } catch (e) { message(e.message); return; }
     S.imageFolder = M.settings.last_folder || "";
     if (S.imageFolder) await loadFolder(null);
-    else { message("Open a folder of pictures (the link above)."); openFolderDialog(); }
+    else {
+      message("Open a folder of pictures (the link above).");
+      // in MonKap's own window the native folder picker is ready a moment after the page: give it that moment
+      await Promise.race([new Promise((r) => window.addEventListener("pywebviewready", r, {once: true})), new Promise((r) => setTimeout(r, 700))]);
+      openFolderDialog();
+    }
   })();
 })();
