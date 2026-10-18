@@ -288,6 +288,7 @@
     badge.textContent = "↳ copied from the original - check that it fits this crop";
     badge.style.display = info.inherited ? "" : "none";
     status("");
+    if (live) live.name = "";                                     // the next answer is the new picture's baseline
     showVerdict(name);
     resize();                                     // also fits the view and draws
     updateMode(); syncButtons();
@@ -1213,6 +1214,37 @@
       $q("mkBadge").style.display = info.inherited ? "" : "none";
     }
   }
+
+  // ---- live: while the page is open, anything changed elsewhere (a training run writing its verdicts, Fizgig or another
+  // program adding or rewriting files, a new trigger word or extension in Fizgig) shows within a few seconds -----------
+  let live = null, liveBusy = false;
+  async function liveTick() {
+    if (liveBusy || document.hidden || !M.folder || M.busy || regen) return;
+    liveBusy = true;
+    try {
+      const c = M.cur;
+      const now = await api(url("live", {name: c ? c.name : ""}));
+      const was = live;
+      live = now;
+      if (!was) return;                                           // the first answer is only the starting point
+      if (now.ext !== was.ext) { M.ext = now.ext; }
+      if (now.trigger !== was.trigger) { M.trigger = now.trigger; triggerState(); }
+      if (now.review !== was.review) {
+        await loadReview();
+        if (M.cur) showVerdict(M.cur.name);
+        await rearrange();
+      }
+      if (now.folder !== was.folder || now.ext !== was.ext) await refreshList();
+      if (c && M.cur === c && !M.dirty && now.name === c.name && now.caption !== c.loaded) {   // rewritten behind the page's back
+        c.loaded = now.caption; text.value = now.caption || ""; $q("mkBadge").style.display = "none";
+        setDot(c.name, !!now.caption); triggerState();
+        status("This caption was changed on disk (by Fizgig or another program): the new text is shown.", "warn");
+      }
+    } catch (e) { /* the server is busy or gone: the next question tries again */ }
+    finally { liveBusy = false; }
+  }
+  setInterval(liveTick, 3000);
+  window.addEventListener("focus", () => { live = null; liveTick(); });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) flush().catch(() => {});

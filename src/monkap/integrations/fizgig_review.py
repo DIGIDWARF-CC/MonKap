@@ -105,6 +105,30 @@ def residuals(log_path: str) -> dict:
     return {k: [sum(v) / len(v) for _e, v in sorted(eps.items())] for k, eps in per.items()}
 
 
+def stamp(dir_: str, folder: str) -> str:
+    """A short string that changes whenever what `review` reads changes (the runs list, the newest run's log and report):
+    a cheap way to ask 'is there anything new?' while a run is going. '' when there is no run to read."""
+    if not looks_like_fizgig(dir_):
+        return ""
+    run = find_run(dir_, folder)
+    if run is None:
+        try:
+            st = os.stat(os.path.join(dir_, "user_data", "runs.json"))
+            return f"none:{st.st_mtime_ns}:{st.st_size}"
+        except OSError:
+            return ""
+    parts = [os.path.join(dir_, "user_data", "runs.json"), os.path.join(str(run["output_dir"]), "loss_log", "per_image_loss.jsonl"),
+             os.path.join(str(run["output_dir"]), "loss_log", "problem_images.json")]
+    out = []
+    for p in parts:
+        try:
+            st = os.stat(p)
+            out.append(f"{st.st_mtime_ns}:{st.st_size}")
+        except OSError:
+            out.append("-")
+    return str(run.get("id")) + "|" + "|".join(out)
+
+
 def review(dir_: str, folder: str) -> dict:
     """What the newest run on `folder` found out: {'available': False, 'reason'}, or the run, each picture's verdict
     (by stem) with its recent and mean residual, the run's settings that matter, and the report's summary."""

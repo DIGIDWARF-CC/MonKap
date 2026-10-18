@@ -103,5 +103,35 @@ class ApiReviewTests(Case):
         self.assertTrue(all(v["means"] and v["todo"] for v in r["verdicts"].values()))
 
 
+class LiveTests(Case):
+    """What the page asks every few seconds: it changes when, and only when, something it shows has changed."""
+
+    def test_the_review_stamp_follows_the_run_files(self):
+        before = fr.stamp(self.fz, self.ds)
+        self.assertTrue(before.startswith("new|"))
+        self.assertEqual(before, fr.stamp(self.fz, self.ds))                        # nothing changed: the same
+        write(os.path.join(self.out, "loss_log", "problem_images.json"), {"epoch": 3, "images": {}})
+        self.assertNotEqual(before, fr.stamp(self.fz, self.ds))                     # a new verdict file
+        self.assertEqual(fr.stamp(self.ds, self.ds), "")                            # not a Fizgig folder
+
+    def test_live_reports_caption_trigger_extension_and_stamps(self):
+        api.save_settings({"fizgig_dir": self.fz})
+        a = api.live(self.ds, "a.png")
+        self.assertIsNone(a["caption"])
+        self.assertEqual((a["ext"], a["trigger"]), (".txt", ""))
+        self.assertTrue(a["review"])
+        write(os.path.join(self.ds, "a.txt"), "now it has one")
+        write(os.path.join(self.fz, "user_data", "last_used.json"),
+              {"folder_triggers": {os.path.normcase(os.path.abspath(self.ds)): "ohwx"}})
+        write(os.path.join(self.fz, "user_data", "web_state.json"),
+              {"family": "k", "values": {"k": {"DATASET_CAPTION_EXT": ".caption"}}})
+        b = api.live(self.ds, "a.png")
+        self.assertEqual((b["trigger"], b["ext"], b["caption"]), ("ohwx", ".caption", None))     # .caption: no such file
+        self.assertEqual(api.live(self.ds, "")["caption"], None)
+        self.assertEqual(api.live(self.ds, "../x.png")["caption"], None)                          # not a picture of the folder
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

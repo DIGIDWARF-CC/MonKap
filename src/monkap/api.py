@@ -201,6 +201,31 @@ def review(folder: str) -> dict:
             "verdicts": verdicts, "counts": counts, "advice": fizgig_review.advice(rev)}
 
 
+# ------------------------------------------------------------------------------------------------ what changed meanwhile
+
+def live(folder: str, name: str = "") -> dict:
+    """What the open page compares with what it has, while it is open (it asks every few seconds): the folder's stamp, the
+    Fizgig run's stamp, the extension and trigger word now in force, and the open picture's caption on disk. All of it is
+    read from disk each time, so a change made by Fizgig, another program or the settings shows within one question."""
+    s = load_settings()
+    ext = effective_ext(s)
+    folder = os.path.abspath(folder)
+    try:
+        st = os.stat(folder)
+        folder_stamp = f"{st.st_mtime_ns}"
+    except OSError:
+        folder_stamp = ""
+    caption = None
+    if name:
+        try:
+            _f, path = dataset.locate(folder, name)
+            caption = captions.read_caption(path, ext)
+        except (NotFound, ValueError, OSError):
+            caption = None
+    return {"folder": folder_stamp, "review": fizgig_review.stamp(s.fizgig_dir, folder) if s.fizgig_dir else "",
+            "ext": ext, "trigger": folder_trigger(folder), "caption": caption, "name": name}
+
+
 # ------------------------------------------------------------------------------------------------ the caption model
 
 def models(url=None) -> dict:
@@ -272,6 +297,8 @@ def get(h, path, qs) -> None:
             return h.json({"ok": True, "template": tpl, "note": note, "examples": example_names(tpl)})
         if path == "/api/browse":
             return h.json(browse(one("path")))
+        if path == "/api/live":
+            return h.json(live(one("folder"), one("name")))
         if path == "/api/review":
             return h.json(review(os.path.abspath(one("folder"))))
         if path == "/api/fizgig":
