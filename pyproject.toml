@@ -24,4 +24,4 @@ monkap-gui = "monkap.gui:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-monkap = ["static/*"]
+monkap = ["static/*", "ai/templates/*.json"]

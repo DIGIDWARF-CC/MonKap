@@ -36,6 +36,9 @@ class MonkapSettings:
     ai_instructions: dict = field(default_factory=dict)   # edited task instructions, by task key
     ai_max_tokens: int = 120
     ai_think: bool = False                # let a reasoning model think first
+    comfy_url: str = ""                    # the ComfyUI that enhances pictures (empty: http://127.0.0.1:8188)
+    enhance_template: str = ""            # a template of the user's own (a workflow in API format); empty: the reference
+    enhance_prompt: str = ""              # words for the enhance, instead of the template's own
 
     @classmethod
     def from_dict(cls, raw) -> "MonkapSettings":
@@ -77,6 +80,8 @@ class MonkapSettings:
         except (TypeError, ValueError):
             s.ai_max_tokens = 120
         s.ai_think = bool(s.ai_think)
+        s.comfy_url, s.enhance_template = str(s.comfy_url or "").strip(), str(s.enhance_template or "").strip()
+        s.enhance_prompt = " ".join(str(s.enhance_prompt or "").split())[:600]
         return s
 
     def to_dict(self) -> dict:

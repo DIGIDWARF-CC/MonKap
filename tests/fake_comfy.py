@@ -1,6 +1,7 @@
 """A made-up ComfyUI for tests: the HTTP routes MonKap uses and a WebSocket that reports progress. Nothing real is touched."""
 import base64
 import hashlib
+import io
 import json
 import struct
 import threading
@@ -8,8 +9,16 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from PIL import Image
+
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-RESULT = b"\x89PNG\r\n\x1a\n-the-enhanced-picture-"
+def _png() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (120, 80), (200, 30, 30)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+RESULT = _png()
 PREVIEW = b"\xff\xd8\xff-a-preview-frame-"
 
 

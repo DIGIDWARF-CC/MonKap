@@ -42,6 +42,7 @@ def main() -> int:
          "--specpath", os.path.join(ROOT, "build"),
          "--paths", os.path.join(ROOT, "src"),
          "--add-data", os.path.join(ROOT, "src", "monkap", "static") + os.pathsep + os.path.join("monkap", "static"),
+         "--add-data", os.path.join(ROOT, "src", "monkap", "ai", "templates") + os.pathsep + os.path.join("monkap", "ai", "templates"),
          "--collect-all", "webview", "--hidden-import", "monkap.gui",
          os.path.join(PKG, "monkap_gui.py")])
     exe = os.path.join(DIST, "MonKap", "MonKap.exe")

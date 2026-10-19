@@ -12,7 +12,7 @@ import threading
 
 from PIL import Image
 
-from . import __version__, appdata, dataset
+from . import __version__, appdata, dataset, enhance
 from .ai import lmstudio, tasks
 from .core import captions, jobs, ledger
 from .integrations import fizgig, fizgig_review
@@ -305,6 +305,17 @@ def get(h, path, qs) -> None:
             return h.json(fizgig.summary(qs["dir"][0] if "dir" in qs else load_settings().fizgig_dir))
         if path == "/api/ai/models":
             return h.json(models(qs["url"][0] if "url" in qs else None))
+        if path == "/api/enhance/status":
+            return h.json(enhance.status())
+        if path in ("/api/enhance/preview", "/api/enhance/result"):
+            got = enhance.preview() if path.endswith("preview") else enhance.result()
+            if got is None:
+                raise NotFound("Nothing to show yet.")
+            return h._send(200, got[0], got[1])
+        if path == "/api/enhance/check":
+            return h.json(enhance.check(load_settings()))
+        if path == "/api/enhance/template":
+            return h._send(200, enhance.reference_bytes(), "application/json")
         if path == "/api/data":
             files = appdata.inventory()
             return h.json({"root": appdata.root(), "files": [[os.path.relpath(p, appdata.root()), n] for p, n in files]})
@@ -348,6 +359,18 @@ def post(h, path, b) -> None:
                 edited[key] = text
             s, _ = save_settings({"ai_instructions": edited})
             return h.json(settings_payload(s))
+        if path == "/api/enhance/start":
+            return h.json(enhance.start(load_settings(), b.get("folder"), b.get("name"), b.get("hint")))
+        if path == "/api/enhance/cancel":
+            return h.json(enhance.cancel())
+        if path == "/api/enhance/free":
+            return h.json(enhance.free(load_settings()))
+        if path == "/api/enhance/decide":
+            return h.json(enhance.decide(load_settings(), str(b.get("action") or ""), b.get("folder"), b.get("name"),
+                                         b.get("text"), b.get("trigger"), ext))
+        if path == "/api/enhance/undo":
+            return h.json(enhance.undo_replace(str(b.get("folder") or ""), str(b.get("name") or ""), str(b.get("backup") or ""),
+                                               str(b.get("old") or "")))
         if path == "/api/data/forget":
             return h.json({"removed": appdata.forget()})
     except NotFound as exc:
