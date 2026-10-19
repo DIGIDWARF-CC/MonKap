@@ -20,6 +20,7 @@
     modal: null, lastDelete: null, review: null, raw: [],
   };
   let regen = false;                     // Regenerate (AI) is running
+  let enh = null;                        // an Enhance run is open in its window: {c}
   const $q = (id) => document.getElementById(id);
   const root = $q("mk"), stage = $q("mkStage"), cv = $q("mkCanvas"), ctx = cv.getContext("2d");
   const text = $q("mkText"), strip = $q("mkStrip"), stripIn = $q("mkStripIn");
@@ -357,6 +358,8 @@
     $q("mkDelete").disabled = !c;
     $q("mkRegen").disabled = !c || regen;
     $q("mkHintBtn").disabled = !c || regen;
+    $q("mkEnhance").disabled = !c || regen || !!enh;
+    $q("mkEnhHintBtn").disabled = !c || regen || !!enh;
     $q("mkInfo").style.display = c ? "" : "none";
     root.classList.toggle("has-frame", !!(c && M.frame));
     triggerState();
@@ -677,7 +680,7 @@
   // ---- Regenerate (AI): the model and task chosen in the settings, for this one picture ------------------------------
   async function regenerate(hint = "") {
     const c = M.cur;
-    if (!c || regen) return;
+    if (!c || regen || enh) return;
     if (!M.settings.lm_model) { openSettings("ai"); return; }
     hint = typeof hint === "string" ? hint.trim() : "";
     regen = true;
@@ -699,46 +702,186 @@
     finally { regen = false; syncButtons(); }
   }
 
-  // ---- a hint for the model ----------------------------------------------------------------------------------------
-  const hints = new Map();                                       // picture -> the last hint typed for it (this page only)
-  let hintPanel = null;
+  // ---- a hint for the model (Regenerate) or your own words for the enhance --------------------------------------------
+  const hints = new Map();                                       // "r:picture" / "e:picture" -> the last hint typed (this page only)
+  let hintPanel = null, hintAnchor = null;
 
   function closeHint() {
     if (!hintPanel) return;
-    hintPanel.remove(); hintPanel = null;
+    hintPanel.remove(); hintPanel = null; hintAnchor = null;
     document.removeEventListener("keydown", hintKey, true);
     document.removeEventListener("mousedown", hintOutside, true);
   }
   const hintKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeHint(); focusHome(); } };
-  const hintOutside = (e) => { if (hintPanel && !hintPanel.contains(e.target) && e.target !== $q("mkHintBtn") && !$q("mkHintBtn").contains(e.target)) closeHint(); };
+  const hintOutside = (e) => { if (hintPanel && !hintPanel.contains(e.target) && !(hintAnchor && hintAnchor.contains(e.target))) closeHint(); };
 
-  function openHint() {
-    const c = M.cur;
-    if (!c || regen || M.modal) return;
-    if (hintPanel) { closeHint(); return; }
-    if (!M.settings.lm_model) { openSettings("ai"); return; }
-    const box = el("textarea", {rows: "3", spellcheck: "false", placeholder: "e.g. a close-up from the rear, the intake manifold is off"});
-    box.value = hints.get(c.name) || "";
-    const go = el("button", {type: "button", class: "btn btn-primary btn-sm", text: "Regenerate with hint"});
-    hintPanel = el("div", {class: "mk-hint", role: "dialog", "aria-label": "A hint for the model"},
+  function openHint(kind = "regen") {
+    const c = M.cur, enhancing = kind === "enhance";
+    if (!c || regen || enh || M.modal) return;
+    const anchor = $q(enhancing ? "mkEnhHintBtn" : "mkHintBtn");
+    if (hintPanel) { const same = hintAnchor === anchor; closeHint(); if (same) return; }
+    if (!enhancing && !M.settings.lm_model) { openSettings("ai"); return; }
+    const key = (enhancing ? "e:" : "r:") + c.name;
+    const box = el("textarea", {rows: "3", spellcheck: "false", placeholder: enhancing
+      ? "e.g. only sharpen the face, keep the background soft"
+      : "e.g. a close-up from the rear, the intake manifold is off"});
+    box.value = hints.get(key) || "";
+    const go = el("button", {type: "button", class: "btn btn-primary btn-sm", text: enhancing ? "Enhance with these words" : "Regenerate with hint"});
+    hintPanel = el("div", {class: "mk-hint", role: "dialog", "aria-label": enhancing ? "Your words for the enhance" : "A hint for the model"},
       el("button", {type: "button", class: "x", text: "×", title: "Close", onclick: () => { closeHint(); focusHome(); }}),
-      el("h4", {text: "A hint for the model"}), box,
-      el("div", {class: "bar"}, el("span", {class: "field-hint", text: "Sent with the task. Ctrl+Enter to go."}), go));
+      el("h4", {text: enhancing ? "Your words for the enhance" : "A hint for the model"}), box,
+      el("div", {class: "bar"}, el("span", {class: "field-hint", text: (enhancing ? "Added to the template's prompt." : "Sent with the task.") + " Ctrl+Enter to go."}), go));
+    hintAnchor = anchor;
     document.body.append(hintPanel);
-    const r = $q("mkHintBtn").getBoundingClientRect(), w = hintPanel.offsetWidth, h = hintPanel.offsetHeight;
+    const r = anchor.getBoundingClientRect(), w = hintPanel.offsetWidth, h = hintPanel.offsetHeight;
     hintPanel.style.left = clamp(r.right - w, 8, innerWidth - w - 8) + "px";          // right edge on the chevron, above it
     hintPanel.style.top = Math.max(8, r.top - h - 8) + "px";
     const send = () => {
       const t = box.value.trim();
-      if (t) hints.set(c.name, t); else hints.delete(c.name);
+      if (t) hints.set(key, t); else hints.delete(key);
       closeHint();
-      regenerate(t);
+      if (enhancing) enhance(t); else regenerate(t);
     };
     go.addEventListener("click", send);
     box.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } });
     document.addEventListener("keydown", hintKey, true);
     document.addEventListener("mousedown", hintOutside, true);
     box.focus();
+  }
+
+  // ---- Enhance (AI): ComfyUI makes the picture sharper; the result waits for a decision ---------------------------------
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  function dropBitmap(name) {                                    // a picture that changed on disk must be fetched again
+    const k = `${M.folder}\n${name}`, b = M.bitmaps.get(k);
+    if (b && !(M.cur && b === M.cur.bmp)) b.close();
+    M.bitmaps.delete(k);
+  }
+  async function showAgain(name) {                               // the list, and the picture of that name open again
+    dropBitmap(name);
+    await refreshList();
+    const i = M.items.findIndex((it) => it[0] === name);
+    if (i >= 0) { M.cur = null; await open(i); }
+  }
+
+  async function enhance(hint = "") {
+    const c = M.cur;
+    if (!c || enh || regen || M.modal || M.busy) return;
+    try { await flush(); } catch (e) { status(e.message, "err"); return; }       // what is typed is on disk first
+    try { await api("/api/enhance/start", {folder: M.folder, name: c.name, hint: typeof hint === "string" ? hint.trim() : ""}); }
+    catch (e) { status(`Enhance: ${e.message}`, "err", {label: "Settings", run: () => openSettings("enhance")}); return; }
+    watchEnhance(c);
+  }
+
+  // the window of a run in progress: the stage, the percent, the latest preview of ComfyUI, Cancel
+  function watchEnhance(c) {
+    enh = {c};
+    syncButtons();
+    const stage = el("div", {class: "lead", text: "Starting…"});
+    const fill = el("i"), bar = el("div", {class: "mk-enh-bar wait"}, fill);
+    const nums = el("div", {class: "mk-enh-line"});
+    const img = el("img", {class: "mk-enh-preview", alt: "The picture as ComfyUI draws it", style: "display:none"});
+    const cancel = el("button", {class: "btn", text: "Cancel"});
+    const body = el("div", {}, el("h2", {text: `Enhancing ${c.name}`}), stage, bar, nums, img, el("div", {class: "buttons"}, cancel));
+    const {done} = dialog(body);
+    const leave = (msg, kind) => { done(); enh = null; syncButtons(); if (msg) status(msg, kind || ""); };
+    cancel.addEventListener("click", async () => {
+      cancel.disabled = true; cancel.textContent = "Cancelling…";
+      try { await api("/api/enhance/cancel", {}); } catch (e) { /* the loop below ends it when the server says so */ }
+    });
+    cancel.focus();
+    (async () => {
+      let seen = 0, lost = 0;
+      for (;;) {
+        let st;
+        try { st = await api("/api/enhance/status"); lost = 0; }
+        catch (e) { if (++lost > 20) { leave("MonKap lost touch with its own server.", "err"); return; } await sleep(500); continue; }
+        if (st.status === "none") { leave(); return; }
+        if (st.status === "cancelled") { leave("Enhance cancelled.", "warn"); return; }
+        if (st.status === "error") {
+          body.replaceChildren(el("h2", {text: "Enhance failed"}), el("div", {class: "lead", text: st.error || "Something went wrong."}),
+            el("div", {class: "buttons"}, el("button", {class: "btn", text: "Settings", onclick: () => { leave(); openSettings("enhance"); }}),
+              el("button", {class: "btn btn-primary", text: "Close", onclick: () => leave()})));
+          return;
+        }
+        if (st.status === "done") { showEnhanced(c, st, body, leave); return; }
+        stage.textContent = st.stage + (st.steps ? `  (step ${st.step} of ${st.steps})` : "");
+        bar.classList.toggle("wait", st.percent === null);
+        fill.style.width = st.percent === null ? "" : st.percent + "%";
+        const parts = [el("span", {text: mmss(st.elapsed)})];
+        if (st.percent !== null) parts.push(el("span", {text: st.percent + "%"}));
+        if (!st.live) parts.push(el("span", {text: "no progress information from ComfyUI"}));
+        if (st.idle > 20) parts.push(el("span", {class: "warn", text: `no signal for ${Math.round(st.idle)} s (a model may be loading)`}));
+        nums.replaceChildren(...parts);
+        if (st.preview && st.preview !== seen) { seen = st.preview; img.src = "/api/enhance/preview?v=" + seen; img.style.display = ""; }
+        await sleep(500);
+      }
+    })();
+  }
+
+  // the window of a result: look at it, then Retry (new seed), Discard, Replace or Store as Kapture
+  function showEnhanced(c, st, body, leave) {
+    body.closest(".mk-dialog").classList.add("wide");
+    let mode = "after";
+    const orig = el("img", {src: url("view", {name: c.name, edge: 2000}), alt: "Original"});
+    const made = el("img", {src: "/api/enhance/result?v=" + st.seed, alt: "Enhanced"});
+    const capO = el("figcaption", {text: `Original · ${c.iw}×${c.ih}`}), capE = el("figcaption", {text: "Enhanced"});
+    made.addEventListener("load", () => { capE.textContent = `Enhanced · ${made.naturalWidth}×${made.naturalHeight}`; });
+    const figs = {before: el("figure", {}, orig, capO), after: el("figure", {}, made, capE)};
+    const area = el("div", {class: "mk-enh-stage"});
+    const seg = el("div", {class: "mk-enh-seg", role: "group", "aria-label": "What to look at"});
+    const modes = [["before", "Original"], ["after", "Enhanced"], ["both", "Side by side"]];
+    const draw = () => {
+      area.replaceChildren(...(mode === "both" ? [figs.before, figs.after] : [figs[mode]]));
+      for (const b of seg.children) b.classList.toggle("on", b.dataset.mode === mode);
+    };
+    for (const [m, label] of modes) seg.append(el("button", {type: "button", "data-mode": m, text: label, onclick: () => { mode = m; draw(); }}));
+    for (const i of [orig, made]) i.addEventListener("click", () => { if (mode !== "both") { mode = mode === "after" ? "before" : "after"; draw(); } });
+    draw();
+    const msg = el("div", {class: "field-hint warn"});
+    const btns = [];
+    const act = (label, cls, title, run) => {
+      const b = el("button", {type: "button", class: "btn " + cls, text: label, title});
+      b.addEventListener("click", async () => {
+        for (const x of btns) x.disabled = true;
+        msg.textContent = "";
+        try { await run(); }
+        catch (e) { msg.textContent = e.message; for (const x of btns) x.disabled = false; }
+      });
+      btns.push(b);
+      return b;
+    };
+    const decide = (action, extra = {}) => api("/api/enhance/decide", {action, folder: M.folder, name: c.name, ...extra});
+    const bar = el("div", {class: "buttons enh"},
+      act("Retry (new seed)", "", "Enhance the same picture again with another seed", async () => {
+        await decide("retry");
+        leave();
+        watchEnhance(c);
+      }),
+      act("Discard", "", "Throw the result away", async () => { await decide("discard"); leave("Enhance result discarded."); }),
+      act("Replace", "", "The enhanced picture takes the original's place; the original is kept and Undo brings it back", async () => {
+        const r = await decide("replace");
+        leave();
+        await showAgain(r.name);
+        status(`Replaced ✓  ${r.name}  (${r.size[0]}×${r.size[1]}); the original is kept.`, "ok", {label: "Undo", run: async () => {
+          try {
+            await api("/api/enhance/undo", {folder: M.folder, name: r.name, backup: r.backup, old: r.old});
+            dropBitmap(r.name);
+            await showAgain(r.old);
+            status("The original is back.", "ok");
+          } catch (e) { status(`Undo failed: ${e.message}`, "err"); }
+        }});
+      }),
+      act("Store as Kapture", "btn-primary", "Save it as a new picture next to the original, named and captioned like a crop", async () => {
+        const r = await decide("kapture", {text: text.value, trigger: M.trigger});
+        leave();
+        await refreshList();
+        status(`Saved ✓  ${r.name}  (${r.size[0]}×${r.size[1]})${r.notes.length ? " - " + r.notes.join("; ") : ""}`, r.notes.length ? "warn" : "ok");
+      }));
+    body.replaceChildren(el("h2", {text: "Enhanced"}),
+      el("div", {class: "field-hint", text: `Click the picture to switch between the original and the enhanced one. Seed ${st.seed}, ${mmss(st.elapsed)}.`}),
+      seg, area, msg, bar);
+    btns[btns.length - 1].focus();
   }
 
   // ---- delete ---------------------------------------------------------------------------------------------------
@@ -1046,6 +1189,43 @@
       tick("fizgig_cache", "Clear Fizgig's cached latents when a picture is erased for good", "Only the latents of that picture, in the folder Fizgig keeps for this dataset."),
       el("div", {class: "mk-warn", text: "This reads Fizgig's own files (user_data, its release notes), and never writes to them. It depends on the Fizgig version: if Fizgig changes how it stores folders or settings, it can stop working, and MonKap just goes back to its own settings. Watch for MonKap updates after Fizgig updates."})];
 
+    // -- Enhance: a ComfyUI that is already running, and the template that says what it does
+    const comfyUrl = field("comfy_url");
+    comfyUrl.placeholder = "http://127.0.0.1:8188";
+    const tplPath = field("enhance_template");
+    tplPath.placeholder = "Empty: the reference template (Qwen Image 2.1)";
+    const enhWords = field("enhance_prompt");
+    enhWords.placeholder = "Empty: the template's own words";
+    const enhReport = el("div", {class: "mk-report"});
+    const say = (text, cls = "") => el("div", {class: "field-hint " + cls, text});
+    async function checkEnhance() {
+      enhReport.replaceChildren(say("Asking ComfyUI…"));
+      let r;
+      try { r = await api("/api/enhance/check?url=" + encodeURIComponent(comfyUrl.value.trim()) + "&template=" + encodeURIComponent(tplPath.value.trim())); }
+      catch (e) { r = {ok: false, error: e.message, problems: []}; }
+      enhReport.replaceChildren();
+      if (r.error) enhReport.append(say(r.error, "warn"));
+      for (const p of r.problems || []) enhReport.append(say("• " + p, "warn"));
+      if (r.ok) enhReport.append(say(`The template is fine and this ComfyUI can run it (${r.custom ? "your template" : "the reference template"}, version ${r.version}).`, "ok-note"));
+    }
+    const freeComfy = async () => {
+      enhReport.replaceChildren(say("Asking ComfyUI…"));
+      try { await api("/api/enhance/free", {url: comfyUrl.value.trim()}); enhReport.replaceChildren(say("ComfyUI was asked to unload its models and free the memory.", "ok-note")); }
+      catch (e) { enhReport.replaceChildren(say(e.message, "warn")); }
+    };
+    const enhancing = [
+      hint("Optional. MonKap hands the picture to a ComfyUI that is already running (it never starts one) and takes the result back. The pictures are sent to this address, so use one you trust."),
+      row("ComfyUI:", comfyUrl, el("button", {type: "button", class: "btn btn-sm", text: "Check", onclick: checkEnhance})),
+      row("Template:", tplPath),
+      hint("A workflow saved in ComfyUI with Save (API Format). Empty: the reference template, made of ComfyUI's own nodes for Qwen Image 2.1."),
+      row("Words:", enhWords),
+      hint("What the template is told to do. Empty: the template's own words. Your words for one picture (the arrow next to Enhance) are added after these."),
+      enhReport,
+      el("div", {class: "row"},
+        el("a", {class: "btn btn-sm", href: "/api/enhance/template", download: "monkap-enhance-reference.json", text: "Download the reference template"}),
+        el("button", {type: "button", class: "btn btn-sm", text: "Free ComfyUI's memory", title: "Unload its models, so a trainer has the video memory", onclick: freeComfy})),
+      el("div", {class: "mk-warn", text: "Your own template: download the reference, open it in ComfyUI (drag the file into the window) and change what you like between the four nodes titled \"MonKap Image\", \"MonKap Prompt\", \"MonKap Seed\" and \"MonKap Result\". Those four are how MonKap talks to the workflow: keep them, and keep them linked. Then Save (API Format) and put the file's path above. Finish the workflow with a preview node, so nothing is written to ComfyUI's output folder."})];
+
     // -- what MonKap keeps
     const dataNote = el("div", {class: "field-hint"});
     async function showData() {
@@ -1071,7 +1251,7 @@
 
     // -- the tabs
     const tabs = [["general", "General", general], ["captions", "Captions", captioning], ["deleting", "Deleting", deleting],
-      ["fizgig", "Fizgig", fizgig], ["data", "Data", data]];
+      ["enhance", "Enhance", enhancing], ["fizgig", "Fizgig", fizgig], ["data", "Data", data]];
     const panes = tabs.map(([key, , nodes]) => el("div", {class: "mk-pane", "data-pane": key, style: "display:none"}, nodes));
     const bar = el("div", {class: "mk-tabs", role: "tablist"});
     const show = (key) => {
@@ -1110,7 +1290,7 @@
         redraw(); syncButtons();
       } catch (e) { err.textContent = e.message; }
     });
-    show(section === "ai" ? "captions" : "general");
+    show(section === "ai" ? "captions" : section === "enhance" ? "enhance" : "general");
     loadModels().then(() => { if (section === "ai") model.focus(); });
     if (s.fizgig_dir) checkFizgig();
   }
@@ -1166,7 +1346,9 @@
     if (open) { drawStrip(true); scrollStripTo(M.index); }
   });
   $q("mkRegen").addEventListener("click", () => regenerate());
-  $q("mkHintBtn").addEventListener("click", openHint);
+  $q("mkHintBtn").addEventListener("click", () => openHint("regen"));
+  $q("mkEnhance").addEventListener("click", () => enhance());
+  $q("mkEnhHintBtn").addEventListener("click", () => openHint("enhance"));
   $q("mkShow").addEventListener("change", rearrange);
   $q("mkSort").addEventListener("change", rearrange);
   $q("mkLegend").addEventListener("click", (e) => { e.preventDefault(); openReviewHelp(); });

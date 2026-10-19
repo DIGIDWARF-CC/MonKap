@@ -196,7 +196,7 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 
 /* Regenerate and its hint chevron: one split button */
 .mk-split { display: flex; gap: 0; }
-.mk-split #mkRegen { border-top-right-radius: 0; border-bottom-right-radius: 0; flex: 1 1 auto; }
+.mk-split > .btn:not(.mk-chev) { border-top-right-radius: 0; border-bottom-right-radius: 0; flex: 1 1 auto; }
 .mk-chev { width: 30px; padding: 0 !important; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; flex: 0 0 30px !important; min-width: 30px; }
 .mk-chev .ico { width: 15px; height: 15px; }
 .mk-hint { position: fixed; z-index: 1050; width: min(360px, calc(100vw - 24px)); padding: 12px 14px; background: var(--bg-surface);
@@ -218,3 +218,24 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 
 .mk-rnote { overflow-wrap: anywhere; font-size: 12px; line-height: 1.35; color: var(--text-secondary); margin: 2px 0 6px; }
 .mk-rnote.warn { color: var(--warning); }
+
+/* Enhance: the progress window and the result window */
+.mk-dialog.wide { width: min(1120px, calc(100vw - 24px)); }
+.mk-enh-bar { height: 10px; border-radius: 5px; background: var(--bg-inset); overflow: hidden; margin: 10px 0 6px; }
+.mk-enh-bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s; }
+.mk-enh-bar.wait > i { width: 35%; animation: mk-enh-slide 1.3s ease-in-out infinite alternate; }
+@keyframes mk-enh-slide { from { margin-left: 0; } to { margin-left: 65%; } }
+.mk-enh-line { display: flex; gap: 14px; color: var(--text-secondary); font-size: 12.5px; flex-wrap: wrap; }
+.mk-enh-line .warn { color: var(--warning); }
+.mk-enh-preview { display: block; max-width: 100%; max-height: 46vh; margin: 12px auto 0; border-radius: var(--radius); background: var(--bg-inset); }
+.mk-enh-seg { display: inline-flex; gap: 0; margin: 4px 0 10px; }
+.mk-enh-seg button { border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-secondary); padding: 4px 12px; cursor: pointer; font: inherit; font-size: 12.5px; }
+.mk-enh-seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.mk-enh-seg button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.mk-enh-seg button + button { border-left: 0; }
+.mk-enh-seg button.on { background: var(--bg-hover); color: var(--text-primary); }
+.mk-enh-stage { display: flex; gap: 10px; justify-content: center; align-items: flex-start; }
+.mk-enh-stage figure { margin: 0; flex: 1 1 0; min-width: 0; text-align: center; color: var(--text-muted); font-size: 12px; }
+.mk-enh-stage img { max-width: 100%; max-height: 58vh; border-radius: var(--radius); cursor: pointer; background: var(--bg-inset); }
+@media (max-width: 700px) { .mk-enh-stage { flex-direction: column; } }
+.mk-dialog .buttons.enh { flex-wrap: wrap; justify-content: flex-end; }

@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import string
 import threading
+from dataclasses import replace
 
 from PIL import Image
 
@@ -226,6 +227,18 @@ def live(folder: str, name: str = "") -> dict:
             "ext": ext, "trigger": folder_trigger(folder), "caption": caption, "name": name}
 
 
+# ------------------------------------------------------------------------------------------------ enhance
+
+def _enhance_settings(url=None, template=None) -> MonkapSettings:
+    """The settings, with the address and the template as typed in the settings window when they are not saved yet."""
+    s = load_settings()
+    if url is not None:
+        s = replace(s, comfy_url=str(url).strip())
+    if template is not None:
+        s = replace(s, enhance_template=str(template).strip())
+    return s
+
+
 # ------------------------------------------------------------------------------------------------ the caption model
 
 def models(url=None) -> dict:
@@ -313,7 +326,8 @@ def get(h, path, qs) -> None:
                 raise NotFound("Nothing to show yet.")
             return h._send(200, got[0], got[1])
         if path == "/api/enhance/check":
-            return h.json(enhance.check(load_settings()))
+            return h.json(enhance.check(_enhance_settings(one("url") if "url" in qs else None,
+                                                         one("template") if "template" in qs else None)))
         if path == "/api/enhance/template":
             return h._send(200, enhance.reference_bytes(), "application/json")
         if path == "/api/data":
@@ -364,7 +378,7 @@ def post(h, path, b) -> None:
         if path == "/api/enhance/cancel":
             return h.json(enhance.cancel())
         if path == "/api/enhance/free":
-            return h.json(enhance.free(load_settings()))
+            return h.json(enhance.free(_enhance_settings(b.get("url"), None)))
         if path == "/api/enhance/decide":
             return h.json(enhance.decide(load_settings(), str(b.get("action") or ""), b.get("folder"), b.get("name"),
                                          b.get("text"), b.get("trigger"), ext))

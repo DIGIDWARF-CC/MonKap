@@ -182,7 +182,9 @@ class Client:
             r = conn.getresponse()
             data = r.read()
         except (OSError, http.client.HTTPException) as e:
-            raise ComfyError(f"Can't reach ComfyUI at {self.url}: {e}. Is it running?") from e
+            why = ("nothing is listening at that address" if isinstance(e, ConnectionRefusedError)
+                   else "it did not answer in time" if isinstance(e, TimeoutError) else str(e))
+            raise ComfyError(f"Can't reach ComfyUI at {self.url}: {why}. Is it running, and is the address right?") from e
         finally:
             conn.close()
         if r.status >= 400:

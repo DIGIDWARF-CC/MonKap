@@ -74,7 +74,30 @@ class RunTests(Case):
         self.assertEqual(call_get("/api/enhance/result").body, RESULT)
         self.assertEqual(call_get("/api/enhance/preview").body, PREVIEW)
         sent = self.fc.prompts[0]
-        self.assertEqual((sent["2"]["inputs"]["value"], sent["3"]["inputs"]["value"]), ("sharper, only the face", seed))
+        base = "Enhance quality, reduce noise and blur, make clean and sharp, keep the content unchanged"
+        self.assertEqual((sent["2"]["inputs"]["value"], sent["3"]["inputs"]["value"]), (base + ". sharper, only the face", seed))
+
+    def test_the_hint_is_added_to_the_settings_prompt_not_put_in_its_place(self):
+        call_post("/api/settings", {"settings": {"enhance_prompt": "make it crisp"}})
+        self.start(hint="only the face")
+        self.wait()
+        self.assertEqual(self.fc.prompts[0]["2"]["inputs"]["value"], "make it crisp. only the face")
+
+    def test_a_hint_for_a_template_without_a_prompt_node_is_refused_in_words(self):
+        with open(enhance.TEMPLATE, encoding="utf-8") as f:
+            g = json.load(f)
+        del g["2"], g["3"]
+        g["9"]["inputs"]["prompt"] = "fixed"
+        g["10"]["inputs"]["seed"] = 5
+        own = os.path.join(self.d, "own.json")
+        with open(own, "w", encoding="utf-8") as f:
+            json.dump(g, f)
+        call_post("/api/settings", {"settings": {"enhance_template": own}})
+        h = call_post("/api/enhance/start", {"folder": self.ds, "name": "shot.png", "hint": "only the face"})
+        self.assertEqual(h.code, 400)
+        self.assertIn("no \"MonKap Prompt\" node", h.data["error"])
+        self.start()                                                         # without words the same template runs
+        self.wait()
 
     def test_the_settings_prompt_is_used_when_there_is_no_hint(self):
         call_post("/api/settings", {"settings": {"enhance_prompt": "make it crisp"}})

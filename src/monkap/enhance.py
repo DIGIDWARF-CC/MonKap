@@ -62,20 +62,34 @@ def _busy() -> bool:
 
 
 def start(s: MonkapSettings, folder: str, name: str, hint: str = "", prompt: str | None = None) -> dict:
-    """Begin an enhance run on a picture of the folder. `hint` is the user's own words for this picture (it replaces the
-    template's prompt); `prompt` is for a retry, which keeps the words of the first run."""
+    """Begin an enhance run on a picture of the folder. `hint` is the user's own words for this picture, added to the
+    prompt (the settings' own, else the template's); `prompt` is for a retry, which keeps the words of the first run."""
     global _run
     folder, path = dataset.locate(folder, name)
     template = load_template(s)
     with _lock:
         if _busy():
             raise ValueError("An enhance run is already going. Wait for it or cancel it.")
-        words = prompt if prompt is not None else (" ".join(str(hint or "").split())[:MAX_PROMPT] or s.enhance_prompt.strip() or None)
+        words = prompt if prompt is not None else _words(s, template, hint)
         data = _read(path)
         seed = random.randrange(2 ** 32)
         job = comfy.Job(comfy.Client(s.comfy_url), template, data, os.path.splitext(path)[1], words, seed).start()
         _run = {"job": job, "folder": folder, "name": name, "path": path, "prompt": words, "seed": seed}
     return {"seed": seed}
+
+
+def _words(s: MonkapSettings, t: comfy.Template, hint: str) -> str | None:
+    """The prompt for a run: the settings' words (else the template's own) and, after them, the user's hint."""
+    hint = " ".join(str(hint or "").split())[:MAX_PROMPT]
+    if "prompt" not in t.nodes:
+        if hint:
+            raise ValueError("This template has no \"MonKap Prompt\" node, so your words can't be used.")
+        return None
+    base = s.enhance_prompt.strip() or str(t.graph[t.nodes["prompt"]]["inputs"].get(t.fields["prompt"]) or "").strip()
+    if not hint:
+        return s.enhance_prompt.strip() or None
+    base = base.rstrip()
+    return f"{base}{'' if not base or base[-1] in '.!?' else '.'} {hint}".strip()
 
 
 def status() -> dict:

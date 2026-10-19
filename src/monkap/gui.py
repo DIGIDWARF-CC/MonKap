@@ -64,6 +64,7 @@ def main(argv=None) -> int:
     try:
         bridge._window = webview.create_window(TITLE, url, width=1280, height=860, min_size=(420, 520),
                                               background_color="#1E2530", js_api=bridge, text_select=True)
+        webview.settings["ALLOW_DOWNLOADS"] = True       # the Enhance tab offers a template to save
         webview.start(private_mode=True)
     except Exception:
         return _browser(url)

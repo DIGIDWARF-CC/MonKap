@@ -11,6 +11,7 @@ Pictures are never resized behind your back, and nothing is erased without a way
 - **Kapture.** Drag a frame on a picture (ratio presets, the size shown in pixels), press `C`, and the framed area is saved next to the original as a new PNG, at the original's own pixels. The frame stays, so a four-panel page is four key presses. New pictures get names from a template (`{parent}_crop_{n:03d}`), and a number is never used twice, even after a crop is deleted.
 - **Captions.** The keyboard starts in the caption box; it saves by itself, and `PgUp` / `PgDn` walk through the folder. Clearing a caption on purpose removes the file (the old text is backed up first). A folder can have a trigger word, which MonKap can put first in a caption with one button.
 - **Caption with a model.** The brain button writes the caption again with a model served by LM Studio, or by any server with an OpenAI-style API (Ollama, llama.cpp, vLLM…). Pick the model and the task in the settings; each task's instruction is editable.
+- **Enhance with ComfyUI.** The sparkle button hands the picture to a ComfyUI that is already running (MonKap never starts one) and shows the progress, with ComfyUI's own preview frames. The result is looked at next to the original, and then: **Retry** (another seed), **Discard**, **Replace** (the original is kept in `.monkap/replaced/`, and Undo brings it back) or **Store as Kapture** (a new picture next to the original, named and captioned like a crop). See [Enhance](#enhance-with-comfyui) below.
 - **Big folders and big pictures.** A virtual filmstrip (a 4000-picture folder opens in a fraction of a second), a whole-picture preview, and full-resolution tiles when you zoom in. Pinch-zoom works on touch.
 - **Delete.** Either move to the folder's `removed/` with Undo, or erase for good. Your choice in the settings.
 
@@ -27,6 +28,14 @@ Run `MonKap-<version>-setup.exe`. It installs for your user (no administrator ri
 MonKap shows its page in the system's **WebView2** runtime. Windows 11 has it. On Windows 10 it usually comes with Microsoft Edge, but an old Windows 10 may only have the older web view: if the window doesn't open, install the Evergreen runtime from <https://developer.microsoft.com/microsoft-edge/webview2/>. Or use the Start menu entry **MonKap (in the browser)**, which opens the same page in your default browser instead of a window.
 
 For captions with a model, start LM Studio's server (or any compatible one), and in MonKap's settings set the address (`http://localhost:1234` is the default), press Refresh, and choose a model that can see pictures. The pictures are sent to that address, so use one you trust.
+
+## Enhance with ComfyUI
+
+Optional. In the settings, the Enhance tab takes the address of your ComfyUI (`http://127.0.0.1:8188` by default) and a template. **Check** tells you, before anything is sent, whether the template is usable and whether that ComfyUI has the nodes and model files it asks for. **Free ComfyUI's memory** unloads its models, for when a trainer needs the video memory.
+
+The template is a ComfyUI workflow saved with *Save (API Format)*. MonKap knows nothing about what is between four marked nodes, found by their titles: `MonKap Image` (the picture goes in), `MonKap Prompt` (the words), `MonKap Seed` and `MonKap Result` (a preview node, so nothing lands in ComfyUI's output folder). **Download the reference template** in the settings gives a working one made only of ComfyUI's own nodes, for Qwen Image 2.1: pick your model files in its three loaders, or change whatever you like between the marked nodes (another model, another editor) and use your file instead. Keep the four nodes and keep them linked; MonKap checks that.
+
+The picture is sent to ComfyUI's temporary folder under a random name, the result is fetched from there, and the run is removed from ComfyUI's history afterwards. ComfyUI itself may keep log lines and its temporary files until it restarts.
 
 ## Run from source (any system)
 
