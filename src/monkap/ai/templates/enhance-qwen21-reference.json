@@ -1,0 +1,75 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "example.png"},
+    "_meta": {"title": "MonKap Image v1 (do not alter)"}
+  },
+  "2": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {"value": "Enhance quality, reduce noise and blur, make clean and sharp, keep the content unchanged"},
+    "_meta": {"title": "MonKap Prompt v1 (do not alter)"}
+  },
+  "3": {
+    "class_type": "PrimitiveInt",
+    "inputs": {"value": 0},
+    "_meta": {"title": "MonKap Seed v1 (do not alter)"}
+  },
+  "4": {
+    "class_type": "PreviewImage",
+    "inputs": {"images": ["12", 0]},
+    "_meta": {"title": "MonKap Result v1 (do not alter)"}
+  },
+  "5": {
+    "class_type": "UNETLoader",
+    "inputs": {"unet_name": "qwen_image_2.1_int8_convrot.safetensors", "weight_dtype": "default"},
+    "_meta": {"title": "Load Diffusion Model (pick yours)"}
+  },
+  "6": {
+    "class_type": "CLIPLoader",
+    "inputs": {"clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default"},
+    "_meta": {"title": "Load Text Encoder (pick yours)"}
+  },
+  "7": {
+    "class_type": "VAELoader",
+    "inputs": {"vae_name": "qwen_image_2.1_vae_bf16.safetensors"},
+    "_meta": {"title": "Load VAE (pick yours)"}
+  },
+  "8": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {"value": ""},
+    "_meta": {"title": "Negative prompt"}
+  },
+  "9": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "prompt": ["2", 0],
+      "negative_prompt": ["8", 0],
+      "resolution": 1024,
+      "clip": ["6", 0],
+      "vae": ["7", 0],
+      "images.image_1": ["1", 0]
+    },
+    "_meta": {"title": "Text Encode Qwen Image 2.1"}
+  },
+  "10": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": ["3", 0],
+      "steps": 25,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["5", 0],
+      "positive": ["9", 0],
+      "negative": ["9", 1],
+      "latent_image": ["9", 2]
+    },
+    "_meta": {"title": "KSampler"}
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["10", 0], "vae": ["7", 0]},
+    "_meta": {"title": "VAE Decode"}
+  }
+}
