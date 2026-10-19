@@ -239,3 +239,5 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 .mk-enh-stage img { max-width: 100%; max-height: 58vh; border-radius: var(--radius); cursor: pointer; background: var(--bg-inset); }
 @media (max-width: 700px) { .mk-enh-stage { flex-direction: column; } }
 .mk-dialog .buttons.enh { flex-wrap: wrap; justify-content: flex-end; }
+
+.mk-dir.mk-file { color: var(--accent-hover); font-weight: 600; }

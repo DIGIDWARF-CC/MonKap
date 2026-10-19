@@ -7,6 +7,7 @@ fake one). Pictures are sent with no-store: nothing from a dataset lands in the 
 from __future__ import annotations
 
 import os
+import re
 import string
 import threading
 from dataclasses import replace
@@ -92,8 +93,16 @@ def open_folder(folder: str, trigger=None) -> dict:
     return {"folder": folder, "trigger": str(entry.get("trigger") or "")}
 
 
-def browse(path: str) -> dict:
-    """The sub-folders of `path` for the folder picker ('' = where to start: the drives, or the home folder)."""
+def _exts(raw: str) -> tuple:
+    """File extensions asked for by a picker: '.json,.txt' -> ('.json', '.txt'); anything else is ignored."""
+    return tuple(e for e in (x.strip().lower() for x in str(raw or "").split(",")) if re.fullmatch(r"\.[a-z0-9]{1,6}", e))
+
+
+def browse(path: str, exts: tuple = ()) -> dict:
+    """The sub-folders of `path` for the pickers ('' = where to start: the drives, or the home folder), and, when `exts`
+    names kinds of files, those files too. A path that is a file means the folder it is in."""
+    if path and os.path.isfile(path):
+        path = os.path.dirname(os.path.abspath(path))
     if not path:
         if os.name == "nt":
             drives = [f"{c}:\\" for c in string.ascii_uppercase if os.path.exists(f"{c}:\\")]
@@ -102,7 +111,7 @@ def browse(path: str) -> dict:
     path = os.path.abspath(path)
     if not os.path.isdir(path):
         raise NotFound("That folder isn't there.")
-    dirs, pics = [], 0
+    dirs, files, pics = [], [], 0
     try:
         with os.scandir(path) as it:
             for e in it:
@@ -110,13 +119,16 @@ def browse(path: str) -> dict:
                     continue
                 if e.is_dir():
                     dirs.append({"name": e.name, "path": os.path.join(path, e.name)})
+                elif os.path.splitext(e.name)[1].lower() in exts:
+                    files.append({"name": e.name, "path": os.path.join(path, e.name)})
                 elif os.path.splitext(e.name)[1].lower() in IMAGE_EXTS:
                     pics += 1
     except OSError as exc:
         raise ValueError(f"Can't read that folder ({exc.strerror or exc}).") from exc
     parent = os.path.dirname(path)
     return {"path": path, "parent": "" if parent == path else parent,
-            "dirs": sorted(dirs, key=lambda d: d["name"].casefold()), "pictures": pics}
+            "dirs": sorted(dirs, key=lambda d: d["name"].casefold()),
+            "files": sorted(files, key=lambda d: d["name"].casefold()), "pictures": pics}
 
 
 # ------------------------------------------------------------------------------------------------ pictures
@@ -309,7 +321,7 @@ def get(h, path, qs) -> None:
                 return h.json({"ok": False, "error": str(exc)})
             return h.json({"ok": True, "template": tpl, "note": note, "examples": example_names(tpl)})
         if path == "/api/browse":
-            return h.json(browse(one("path")))
+            return h.json(browse(one("path"), _exts(one("files"))))
         if path == "/api/live":
             return h.json(live(one("folder"), one("name")))
         if path == "/api/review":

@@ -278,6 +278,16 @@ class FolderAndDataTests(ApiCase):
         self.assertEqual(d["pictures"], 3)
         self.assertEqual(call_get("/api/browse", path=os.path.join(self.d, "nope")).code, 404)
 
+    def test_browse_lists_the_files_of_the_kinds_asked_for_and_takes_a_file_as_its_folder(self):
+        for n in ("a.json", "B.JSON", "notes.txt", ".hidden.json"):
+            with open(os.path.join(self.ds, n), "w", encoding="utf-8") as f:
+                f.write("{}")
+        d = call_get("/api/browse", path=self.ds, files=".json, .nope!").data
+        self.assertEqual([x["name"] for x in d["files"]], ["a.json", "B.JSON"])
+        self.assertEqual(call_get("/api/browse", path=self.ds).data["files"], [])          # none asked for: none listed
+        d = call_get("/api/browse", path=os.path.join(self.ds, "a.json"), files=".json").data
+        self.assertEqual(d["path"], os.path.abspath(self.ds))
+
     def test_forget_removes_only_the_application_folder(self):
         call_post("/api/folder", {"folder": self.ds, "trigger": "x"})
         files = call_get("/api/data").data["files"]

@@ -935,9 +935,10 @@
   // ---- dialogs --------------------------------------------------------------------------------------------------
   function dialog(content) {
     const veil = el("div", {class: "mk-veil"}, el("div", {class: "mk-dialog", role: "dialog", "aria-modal": "true"}, content));
+    const under = M.modal;                                       // a window opened over another (a file picker over the settings)
     document.body.append(veil);
     M.modal = veil;
-    const done = () => { veil.remove(); M.modal = null; focusHome(); };
+    const done = () => { veil.remove(); M.modal = under; if (!under) focusHome(); };
     return {veil, done};
   }
 
@@ -1028,6 +1029,43 @@
     });
     browse(M.folder || (recent[0] || ""));
     path.focus();
+  }
+
+  // ---- a file picker of MonKap's own (the same in the window and in the browser): folders, and the files asked for ----------
+  // resolves with the chosen file's path, or "" when it was cancelled
+  function pickFile({title, exts, start}) {
+    return new Promise((resolve) => {
+      const path = el("input", {type: "text", spellcheck: "false", placeholder: "Folder", style: "flex:1 1 280px"});
+      const list = el("div", {class: "mk-browse"});
+      const here = el("div", {class: "field-hint"});
+      const err = el("div", {class: "field-hint warn"});
+      const cancel = el("button", {class: "btn", text: "Cancel"});
+      const row = (label, p) => el("button", {type: "button", class: "mk-dir", text: label, onclick: () => browse(p)});
+      let close = () => {};
+      const finish = (p) => { close(); resolve(p); };
+      async function browse(p) {
+        err.textContent = "";
+        try {
+          const r = await api("/api/browse?path=" + encodeURIComponent(p || "") + "&files=" + encodeURIComponent(exts.join(",")));
+          path.value = r.path;
+          list.replaceChildren();
+          if (r.path && r.parent !== null) list.append(row("↑  up", r.parent));
+          for (const d of r.dirs) list.append(row(d.name, d.path));
+          for (const f of r.files || []) list.append(el("button", {type: "button", class: "mk-dir mk-file", text: f.name, title: f.path, onclick: () => finish(f.path)}));
+          here.textContent = !r.path ? "Drives" : (r.files || []).length ? "Click a file to choose it." : `No ${exts.join(" / ")} files here.`;
+        } catch (e) { err.textContent = e.message; }
+      }
+      const {veil, done} = dialog([el("h2", {text: title}),
+        el("div", {class: "row"}, path, el("button", {class: "btn", text: "Go", onclick: () => browse(path.value.trim())})),
+        here, list, err, el("div", {class: "buttons"}, cancel)]);
+      const onKey = (e) => { if (e.key === "Escape" && M.modal === veil) { e.preventDefault(); e.stopPropagation(); finish(""); } };
+      close = () => { document.removeEventListener("keydown", onKey, true); done(); };
+      document.addEventListener("keydown", onKey, true);
+      cancel.addEventListener("click", () => finish(""));
+      veil.addEventListener("mousedown", (e) => { if (e.target === veil) finish(""); });
+      path.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); browse(path.value.trim()); } });
+      browse(start || M.folder || "");
+    });
   }
 
   // ---- settings: one tab for each kind of thing ---------------------------------------------------------------------
@@ -1216,7 +1254,10 @@
     const enhancing = [
       hint("Optional. MonKap hands the picture to a ComfyUI that is already running (it never starts one) and takes the result back. The pictures are sent to this address, so use one you trust."),
       row("ComfyUI:", comfyUrl, el("button", {type: "button", class: "btn btn-sm", text: "Check", onclick: checkEnhance})),
-      row("Template:", tplPath),
+      row("Template:", tplPath, el("button", {type: "button", class: "btn btn-sm", text: "Browse…", onclick: async () => {
+        const got = await pickFile({title: "Choose a template", exts: [".json"], start: tplPath.value.trim()});
+        if (got) { tplPath.value = got; checkEnhance(); }
+      }})),
       hint("A workflow saved in ComfyUI with Save (API Format). Empty: the reference template, made of ComfyUI's own nodes for Qwen Image 2.1."),
       row("Words:", enhWords),
       hint("What the template is told to do. Empty: the template's own words. Your words for one picture (the arrow next to Enhance) are added after these."),
@@ -1268,7 +1309,7 @@
       el("div", {class: "buttons"}, cancel, save)]);
     veil = shown.veil;
     const done = shown.done;
-    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+    const onKey = (e) => { if (e.key === "Escape" && M.modal === veil) { e.preventDefault(); e.stopPropagation(); close(); } };
     const close = () => { document.removeEventListener("keydown", onKey, true); done(); };
     document.addEventListener("keydown", onKey, true);
     cancel.addEventListener("click", close);
