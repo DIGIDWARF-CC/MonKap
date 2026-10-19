@@ -4,6 +4,8 @@ A workbench for preparing image datasets: frame and crop pictures, write and edi
 
 Pictures are never resized behind your back, and nothing is erased without a way back unless you ask for it.
 
+![MonKap: a folder of pictures, the caption under the picture, training labels on the thumbnails](docs/screenshots/01-overview.jpg)
+
 ## What it does
 
 - **Kapture.** Drag a frame on a picture (ratio presets, the size shown in pixels), press `C`, and the framed area is saved next to the original as a new PNG, at the original's own pixels. The frame stays, so a four-panel page is four key presses. New pictures get names from a template (`{parent}_crop_{n:03d}`), and a number is never used twice, even after a crop is deleted.
@@ -11,6 +13,12 @@ Pictures are never resized behind your back, and nothing is erased without a way
 - **Caption with a model.** The brain button writes the caption again with a model served by LM Studio, or by any server with an OpenAI-style API (Ollama, llama.cpp, vLLM…). Pick the model and the task in the settings; each task's instruction is editable.
 - **Big folders and big pictures.** A virtual filmstrip (a 4000-picture folder opens in a fraction of a second), a whole-picture preview, and full-resolution tiles when you zoom in. Pinch-zoom works on touch.
 - **Delete.** Either move to the folder's `removed/` with Undo, or erase for good. Your choice in the settings.
+
+![Kapture: a 1:1 frame on the picture; C saves it as a new picture](docs/screenshots/02-kapture.jpg)
+
+The layout follows the window: in a narrow window (or on a touch screen) the picture goes first and the buttons become one row at the bottom.
+
+<img src="docs/screenshots/06-phone.jpg" alt="The narrow layout" width="260">
 
 ## Install (Windows 10 and 11)
 
@@ -38,6 +46,16 @@ monkap
 Optional. In the settings, the Fizgig tab takes the folder of a [Fizgig](https://github.com/shootthesound/Fizgig) install, and MonKap reads a few things from it instead of asking you twice: the trigger word of a folder, the Caption Extension, and where Fizgig keeps its latent cache (so erasing a picture for good also clears its latents). MonKap only reads Fizgig's files and never writes to them.
 
 **Training review.** With the Fizgig folder set, and once a Fizgig run has trained on the folder you have open, MonKap reads that run's per-image loss watch and shows it where you work: a coloured label on each picture (Stuck, Suspect, Learning, Learned…), the verdict and what to do about it under the caption, a list you can filter ("Problems") and sort ("Hardest first"), and a page that explains every label and, from the run's own settings, which of Fizgig's options could help (auto-recaption, per-image LR, where learning finished). It shows no charts: Fizgig's Runs page has them.
+
+![Problem pictures first, hardest on top, with the verdict under the caption](docs/screenshots/03-training-review.jpg)
+
+![What every label means, and what to try in Fizgig](docs/screenshots/04-verdicts-explained.jpg)
+
+The page checks for changes every few seconds while it is open, so verdicts appear as a run writes them, and a new trigger word or caption extension set in Fizgig shows up without reloading. A caption you are typing is never overwritten.
+
+If you moved your Fizgig folder after a run, MonKap still finds the run's results: Fizgig records absolute paths, so when the recorded folder is gone MonKap looks for it in this Fizgig's output folder, and a note under the filters says so. When it finds nothing, the same place says why.
+
+![The Fizgig tab of the settings](docs/screenshots/05-fizgig-settings.jpg)
 
 This depends on the Fizgig version. It was checked against Fizgig 8.5.9, and if Fizgig changes how it stores folders or settings it can stop working (MonKap then falls back to its own settings). Watch for MonKap updates after Fizgig updates.
 
