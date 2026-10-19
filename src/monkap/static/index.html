@@ -10,6 +10,13 @@
 <body>
 <div class="mk" id="mk">
   <div class="mk-main">
+    <div class="mk-multitop" id="mkMultiTop">
+      <button class="btn btn-sm" id="mkBackGal" type="button" title="Back to the gallery of the selected pictures"><svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Back to selection gallery</button>
+      <span class="mk-multitext" id="mkMultiText"></span>
+      <button class="btn btn-sm" id="mkUndoCaps" type="button" style="display:none">Undo captions</button>
+      <button class="btn btn-sm" id="mkExitSel" type="button" title="Leave selection mode">Exit selection mode</button>
+    </div>
+    <div class="mk-gallery" id="mkGallery" tabindex="0" aria-label="The selected pictures"></div>
     <div class="mk-stage" id="mkStage" tabindex="0" aria-label="The picture">
       <canvas id="mkCanvas"></canvas>
       <div class="mk-ratios" id="mkRatios" role="group" aria-label="Frame ratio"></div>
@@ -21,7 +28,7 @@
         <button class="mk-zb" id="mkZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
         <button class="mk-zb" id="mkFit" title="Fit the whole picture">Fit</button>
       </div>
-      <div class="mk-mode" id="mkMode">Selection mode: <kbd>C</kbd> saves the frame as a new picture · <kbd>Esc</kbd> drops it</div>
+      <div class="mk-mode" id="mkMode">Frame: <kbd>C</kbd> saves it as a new picture · <kbd>Esc</kbd> drops it</div>
       <div class="mk-msg" id="mkMsg"></div>
     </div>
     <div class="mk-caption">
@@ -64,6 +71,13 @@
       <a href="#" id="mkLegend" class="mk-change">What do the labels mean?</a>
     </div>
     <div class="mk-rnote" id="mkReviewNote" style="display:none"></div>
+    <button class="btn btn-sm mk-selenter" id="mkSelEnter" type="button" title="Pick several pictures to caption or delete them together">Enter selection mode</button>
+    <div class="mk-selbar" id="mkSelBar">
+      <button class="mk-ib" id="mkSelAll" type="button" title="Select all (Ctrl+A)" aria-label="Select all"><svg class="ico" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12.5l3 3 5-6"/></svg></button>
+      <button class="mk-ib" id="mkSelNone" type="button" title="Select none" aria-label="Select none"><svg class="ico" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/></svg></button>
+      <button class="mk-ib" id="mkSelInv" type="button" title="Invert the selection" aria-label="Invert the selection"><svg class="ico" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M12 3.5v17M12 3.5h5.5a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H12z" fill="currentColor" stroke="none" opacity=".55"/></svg></button>
+      <span class="mk-selcount" id="mkSelCount">0 selected</span>
+    </div>
     <button class="btn btn-sm mk-drawer" id="mkDrawer" aria-expanded="false">Pictures ▾</button>
     <div class="mk-strip" id="mkStrip" aria-label="Pictures in the folder"><div class="mk-strip-in" id="mkStripIn"></div></div>
   </aside>

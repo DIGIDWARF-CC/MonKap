@@ -191,6 +191,30 @@ def delete(folder, name, ext) -> dict:
     return {"mode": "hard", "purged": res.purged, "notes": res.notes}
 
 
+MAX_MANY = 5000
+
+
+def delete_many(folder, names, ext) -> dict:
+    """The picked pictures, each as `delete` does it (the user's soft or hard mode). One picture failing does not stop the
+    rest: it is named in `failed`. `moved` is the whole undo list of a soft delete (`/api/undelete` takes it as it is)."""
+    if not isinstance(names, list) or not names or len(names) > MAX_MANY:
+        raise ValueError("Pick some pictures first.")
+    out = {"mode": None, "moved": [], "purged": 0, "deleted": [], "failed": [], "notes": []}
+    for name in names:
+        try:
+            r = delete(folder, str(name), ext)
+        except (NotFound, ValueError, OSError) as exc:
+            out["failed"].append({"name": str(name), "error": str(exc)})
+            continue
+        out["mode"] = r["mode"]
+        out["moved"] += r.get("moved", [])
+        out["purged"] += r.get("purged", 0)
+        out["notes"] += r.get("notes", [])
+        out["deleted"].append(str(name))
+    out["mode"] = out["mode"] or load_settings().delete_mode
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ the training review
 
 def review(folder: str) -> dict:
@@ -284,7 +308,7 @@ def recaption(folder, name, ext, hint="") -> dict:
         text = captions.ensure_trigger_prefix(text, trigger)
     before = captions.read_caption(path, ext)
     res = captions.save_caption(path, text, before, ext)
-    return {"caption": text, "kind": res.kind}
+    return {"caption": text, "kind": res.kind, "before": before}
 
 
 # ------------------------------------------------------------------------------------------------ routes
@@ -363,6 +387,8 @@ def post(h, path, b) -> None:
             return h.json(kapture(b.get("folder"), b.get("name"), b.get("box"), b.get("text"), b.get("trigger"), ext))
         if path == "/api/delete":
             return h.json(delete(b.get("folder"), b.get("name"), ext))
+        if path == "/api/delete_many":
+            return h.json(delete_many(b.get("folder"), b.get("names"), ext))
         if path == "/api/undelete":
             return h.json({"restored": dataset.restore(str(b.get("folder") or ""), b.get("moved") or [])})
         if path == "/api/settings":

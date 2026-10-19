@@ -158,6 +158,16 @@ class RecaptionHintTests(unittest.TestCase):
         self.assertEqual(r["caption"], "A dog on a lawn.")
         self.assertNotIn("The user adds this note", self.sent_text())
 
+    def test_the_answer_carries_the_caption_it_replaced_so_that_a_batch_can_be_undone(self):
+        self.assertIsNone(self.api.recaption(self.ds, "a.png", ".txt")["before"])          # there was none
+        with open(os.path.join(self.ds, "a.png").replace(".png", ".txt"), "w", encoding="utf-8") as f:
+            f.write("an old caption")
+        r = self.api.recaption(self.ds, "a.png", ".txt")
+        self.assertEqual((r["before"], r["caption"]), ("an old caption", "A dog on a lawn."))
+        with open(os.path.join(self.ds, "a.txt"), "w", encoding="utf-8") as f:
+            f.write("a hand-written one")
+        self.assertEqual(self.api.recaption(self.ds, "a.png", ".txt")["before"], "a hand-written one")
+
     def test_a_hint_goes_after_the_task_tidied_and_cut(self):
         self.api.recaption(self.ds, "a.png", ".txt", "  close-up,\n rear view, the manifold is off ")
         text = self.sent_text()

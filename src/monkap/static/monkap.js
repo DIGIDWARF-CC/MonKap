@@ -21,6 +21,9 @@
   };
   let regen = false;                     // Regenerate (AI) is running
   let enh = null;                        // an Enhance run is open in its window: {c}
+  // selection mode: sel = the picked names, canvas = one picture opened from the gallery, run = captions being written
+  const MS = {on: false, canvas: false, sel: new Set(), anchor: -1, tiles: new Map(), status: new Map(), errors: new Map(),
+    run: null, undo: null, note: "", lastMany: null, focusing: null};
   const $q = (id) => document.getElementById(id);
   const root = $q("mk"), stage = $q("mkStage"), cv = $q("mkCanvas"), ctx = cv.getContext("2d");
   const text = $q("mkText"), strip = $q("mkStrip"), stripIn = $q("mkStripIn");
@@ -172,6 +175,7 @@
     M.folder = (S.imageFolder || "").trim();
     M.srcFolder = M.folder;
     $q("mkChange").title = M.folder ? `Folder: ${M.folder}. Click to open another.` : "Open a folder of pictures.";
+    if (MS.on) exitSelection(true);
     closePicture();
     if (!M.folder) { message("Open a folder of pictures (the link above)."); M.items = []; drawStrip(true); return; }
     try {
@@ -213,16 +217,21 @@
         e.stopPropagation();
         popover(e.currentTarget, [name, M.items[i][1] ? "Has a caption" : "Empty caption"]);
       }});
-      const node = el("div", {class: "mk-th" + (i === M.index ? " cur" : ""), onclick: () => go(i - M.index)},
+      const node = el("div", {class: "mk-th" + (i === M.index ? " cur" : "") + (MS.on && MS.sel.has(name) ? " sel" : ""),
+        onclick: (e) => (MS.on ? pickAt(i, e) : go(i - M.index))},
         el("img", {src: url("thumb", {name}), alt: "", draggable: "false"}),
         el("span", {class: "pill" + (has ? " has" : ""), text: "Empty caption"}), verdictChip(name), info);
       node.style[h ? "left" : "top"] = (i * p + 4) + "px";
       stripIn.append(node);
       M.thumbs.set(i, node);
     }
+    if (reset && MS.on) multiChanged();                          // the list changed: the picked set and the gallery follow
   }
   const drawStripSoon = () => requestAnimationFrame(() => drawStrip());
-  function markCurrent() { for (const [i, n] of M.thumbs) n.classList.toggle("cur", i === M.index); }
+  function markCurrent() {
+    for (const [i, n] of M.thumbs) n.classList.toggle("cur", i === M.index);
+    if (MS.on) markGalleryCur();
+  }
   function scrollStripTo(i) {
     if (i < 0) return;
     const h = horizontal(), p = pitch(), size = h ? strip.clientWidth : strip.clientHeight;
@@ -237,6 +246,8 @@
     M.items[i][1] = has ? 1 : 0;
     const n = M.thumbs.get(i);
     if (n) n.querySelector(".pill").classList.toggle("has", !!has);
+    const t = MS.tiles.get(name);
+    if (t) t.querySelector(".pill").classList.toggle("has", !!has);
   }
 
   // ---- small pop-ups --------------------------------------------------------------------------------------------
@@ -258,6 +269,7 @@
     M.cur = null; M.frame = null; M.tile = null; M.dirty = false; M.index = -1;
     text.value = ""; $q("mkBadge").style.display = "none";
     redraw(); updateMode(); syncButtons();
+    if (MS.on) markGalleryCur();
   }
 
   async function getBitmap(name) {
@@ -305,7 +317,7 @@
     for (const j of [i + 1, i - 1]) if (M.items[j]) getBitmap(M.items[j][0]).catch(() => {});   // the neighbours, ready
   }
 
-  const go = (d) => open(M.index + d);
+  const go = (d) => (MS.on ? goSelected(d) : open(M.index + d));
 
   // ---- the canvas -----------------------------------------------------------------------------------------
   function resize() {
@@ -349,30 +361,48 @@
     $q("mkActual").textContent = c ? Math.round(M.view.scale * 100) + "%" : "100%";
   }
 
-  // which buttons make sense now: Kapture needs a frame on the picture
+  // which buttons make sense now: Kapture needs a frame on the picture; in the gallery of a selection they act on all the picked
+  const REGEN_TITLE = $q("mkRegen").title, DELETE_TITLE = $q("mkDelete").title;
+  const ENHANCE_TITLE = "Make this picture sharper and cleaner with ComfyUI (set up in the settings, Enhance tab)";
   function syncButtons() {
-    const c = M.cur;
-    $q("mkKapture").disabled = !c || !M.frame || M.busy;
-    $q("mkPrev").disabled = !c || M.index <= 0;
-    $q("mkNext").disabled = !c || M.index >= M.items.length - 1;
-    $q("mkDelete").disabled = !c;
-    $q("mkRegen").disabled = !c || regen;
-    $q("mkHintBtn").disabled = !c || regen;
-    $q("mkEnhance").disabled = !c || regen || !!enh;
-    $q("mkEnhHintBtn").disabled = !c || regen || !!enh;
+    const c = M.cur, gal = inGallery(), run = !!MS.run;
+    const picked = MS.on ? selectedNames() : [], n = picked.length;
+    const at = MS.on && c ? picked.indexOf(c.name) : -1;
+    $q("mkKapture").disabled = !c || !M.frame || M.busy || gal || run;
+    $q("mkPrev").disabled = !c || (MS.on ? at <= 0 : M.index <= 0);
+    $q("mkNext").disabled = !c || (MS.on ? at < 0 || at >= n - 1 : M.index >= M.items.length - 1);
+    $q("mkDelete").disabled = gal ? !n || run || M.busy : !c || run;
+    $q("mkRegen").disabled = gal ? !n || run || regen || M.busy : !c || regen || run;
+    $q("mkHintBtn").disabled = $q("mkRegen").disabled;
+    $q("mkEnhance").disabled = !c || gal || regen || !!enh || run;
+    $q("mkEnhHintBtn").disabled = $q("mkEnhance").disabled;
+    $q("mkEnhance").title = gal ? "One picture at a time: open it (double click), then enhance it" : ENHANCE_TITLE;
+    $q("mkRegen").querySelector(".lbl").textContent = gal ? `Regenerate captions (${n})` : "Regenerate (AI)";
+    $q("mkRegen").title = gal ? `Write the captions of the ${plural(n, "picked picture")} again, one after another` : REGEN_TITLE;
+    $q("mkDelete").querySelector(".lbl").textContent = gal ? `Delete selected (${n})` : "Delete…";
+    $q("mkDelete").title = gal ? `Delete the ${plural(n, "picked picture")} (asks every time)` : DELETE_TITLE;
+    $q("mkShow").disabled = $q("mkSort").disabled = run;       // the picked set holds still while captions are written
     $q("mkInfo").style.display = c ? "" : "none";
     root.classList.toggle("has-frame", !!(c && M.frame));
+    lockText();
     triggerState();
   }
 
   // the trigger word button: shown when the folder has one, greyed out when the caption already has it
   function triggerState() {
     const b = $q("mkTrigger");
+    if (inGallery()) {                                           // in the gallery it works on every picked caption
+      b.style.display = M.trigger && selectedNames().length ? "" : "none";
+      b.disabled = !!MS.run || M.busy;
+      b.title = `Put the trigger word first in every picked caption: ${M.trigger}`;
+      return;
+    }
     b.style.display = M.trigger && M.cur ? "" : "none";
     const has = G.hasTrigger(text.value, M.trigger);
     b.disabled = has;
     b.title = has ? "The trigger word is already in the caption" : `Put the trigger word first: ${M.trigger}`;
   }
+
   function addTrigger() {
     if (!M.cur || !M.trigger) return;
     const next = G.withTrigger(text.value, M.trigger);
@@ -680,7 +710,7 @@
   // ---- Regenerate (AI): the model and task chosen in the settings, for this one picture ------------------------------
   async function regenerate(hint = "") {
     const c = M.cur;
-    if (!c || regen || enh) return;
+    if (!c || regen || enh || MS.run || inGallery()) return;
     if (!M.settings.lm_model) { openSettings("ai"); return; }
     hint = typeof hint === "string" ? hint.trim() : "";
     regen = true;
@@ -716,20 +746,21 @@
   const hintOutside = (e) => { if (hintPanel && !hintPanel.contains(e.target) && !(hintAnchor && hintAnchor.contains(e.target))) closeHint(); };
 
   function openHint(kind = "regen") {
-    const c = M.cur, enhancing = kind === "enhance";
-    if (!c || regen || enh || M.modal) return;
+    const c = M.cur, enhancing = kind === "enhance", gal = inGallery() && !enhancing;
+    if (enhancing ? !c || inGallery() : gal ? !selectedNames().length : !c) return;
+    if (regen || enh || M.modal || MS.run) return;
     const anchor = $q(enhancing ? "mkEnhHintBtn" : "mkHintBtn");
     if (hintPanel) { const same = hintAnchor === anchor; closeHint(); if (same) return; }
     if (!enhancing && !M.settings.lm_model) { openSettings("ai"); return; }
-    const key = (enhancing ? "e:" : "r:") + c.name;
+    const key = (enhancing ? "e:" : "r:") + (gal ? "*" : c.name);
     const box = el("textarea", {rows: "3", spellcheck: "false", placeholder: enhancing
       ? "e.g. only sharpen the face, keep the background soft"
       : "e.g. a close-up from the rear, the intake manifold is off"});
     box.value = hints.get(key) || "";
-    const go = el("button", {type: "button", class: "btn btn-primary btn-sm", text: enhancing ? "Enhance with these words" : "Regenerate with hint"});
+    const go = el("button", {type: "button", class: "btn btn-primary btn-sm", text: enhancing ? "Enhance with these words" : gal ? "Regenerate them with hint" : "Regenerate with hint"});
     hintPanel = el("div", {class: "mk-hint", role: "dialog", "aria-label": enhancing ? "Your words for the enhance" : "A hint for the model"},
       el("button", {type: "button", class: "x", text: "×", title: "Close", onclick: () => { closeHint(); focusHome(); }}),
-      el("h4", {text: enhancing ? "Your words for the enhance" : "A hint for the model"}), box,
+      el("h4", {text: enhancing ? "Your words for the enhance" : gal ? `A hint for the ${plural(selectedNames().length, "picked picture")}` : "A hint for the model"}), box,
       el("div", {class: "bar"}, el("span", {class: "field-hint", text: (enhancing ? "Added to the template's prompt." : "Sent with the task.") + " Ctrl+Enter to go."}), go));
     hintAnchor = anchor;
     document.body.append(hintPanel);
@@ -740,7 +771,7 @@
       const t = box.value.trim();
       if (t) hints.set(key, t); else hints.delete(key);
       closeHint();
-      if (enhancing) enhance(t); else regenerate(t);
+      if (enhancing) enhance(t); else if (gal) regenerateMany(t); else regenerate(t);
     };
     go.addEventListener("click", send);
     box.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } });
@@ -759,6 +790,7 @@
   }
   async function showAgain(name) {                               // the list, and the picture of that name open again
     dropBitmap(name);
+    if (MS.on) MS.sel.add(name);                                 // a replaced picture (maybe under another extension) stays picked
     await refreshList();
     const i = M.items.findIndex((it) => it[0] === name);
     if (i >= 0) { M.cur = null; await open(i); }
@@ -766,7 +798,7 @@
 
   async function enhance(hint = "") {
     const c = M.cur;
-    if (!c || enh || regen || M.modal || M.busy) return;
+    if (!c || enh || regen || M.modal || M.busy || MS.run || inGallery()) return;
     try { await flush(); } catch (e) { status(e.message, "err"); return; }       // what is typed is on disk first
     try { await api("/api/enhance/start", {folder: M.folder, name: c.name, hint: typeof hint === "string" ? hint.trim() : ""}); }
     catch (e) { status(`Enhance: ${e.message}`, "err", {label: "Settings", run: () => openSettings("enhance")}); return; }
@@ -884,10 +916,325 @@
     btns[btns.length - 1].focus();
   }
 
+  // ---- selection mode: pick several pictures, then caption or delete them together -----------------------------------------
+  // `MS.sel` holds names, but what acts is always the picked pictures that the list shows now: a filter can't hide a victim.
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const selectedNames = () => M.items.filter((it) => MS.sel.has(it[0])).map((it) => it[0]);
+  const inGallery = () => MS.on && !MS.canvas;
+  const gallery = $q("mkGallery");
+
+  function makeTile(name, has) {
+    const open = el("button", {type: "button", title: "Open this picture (double click)", "aria-label": "Open this picture", text: "⤢",
+      onclick: (e) => { e.stopPropagation(); expand(name); }});
+    const drop = el("button", {type: "button", title: "Take it out of the selection", "aria-label": "Take it out of the selection", text: "×",
+      onclick: (e) => { e.stopPropagation(); setPicked(name, false); }});
+    const node = el("div", {class: "mk-tile", "data-name": name, title: name},
+      el("img", {src: url("thumb", {name}), alt: "", loading: "lazy", draggable: "false"}),
+      verdictChip(name), el("span", {class: "pill" + (has ? " has" : ""), text: "Empty caption"}),
+      el("span", {class: "state"}), el("div", {class: "tools"}, open, drop));
+    node.addEventListener("click", () => focusTile(name));
+    node.addEventListener("dblclick", () => expand(name));
+    return node;
+  }
+
+  const STATE_LABEL = {done: "Caption updated", failed: "Failed"};
+  function paintTile(name) {
+    const n = MS.tiles.get(name);
+    if (!n) return;
+    const st = MS.status.get(name) || "";
+    for (const k of ["queued", "working", "done", "failed"]) n.classList.toggle(k, k === st);
+    n.querySelector(".state").textContent = STATE_LABEL[st] || "";
+    n.title = st === "failed" ? `${name}: ${MS.errors.get(name) || "failed"}` : name;
+    for (const b of n.querySelectorAll(".tools button")) b.disabled = !!MS.run && b.textContent === "×";
+  }
+  function markGalleryCur() {
+    const at = M.items[M.index];
+    for (const [name, n] of MS.tiles) n.classList.toggle("cur", !!at && at[0] === name);
+  }
+  function markSelected() {
+    for (const [i, node] of M.thumbs) node.classList.toggle("sel", MS.on && !!M.items[i] && MS.sel.has(M.items[i][0]));
+  }
+
+  function syncGallery() {
+    const names = selectedNames(), want = new Set(names), has = new Map(M.items.map((it) => [it[0], it[1]]));
+    for (const [n, node] of MS.tiles) if (!want.has(n)) { node.remove(); MS.tiles.delete(n); }
+    const nodes = names.map((n) => {
+      let node = MS.tiles.get(n);
+      if (!node) { node = makeTile(n, has.get(n)); MS.tiles.set(n, node); paintTile(n); }
+      return node;
+    });
+    if (nodes.length) gallery.replaceChildren(...nodes);
+    else gallery.replaceChildren(el("div", {class: "empty", text: "Nothing is picked. Click pictures in the strip to pick them."}));
+    markGalleryCur();
+  }
+
+  function lockText() {                                          // a caption that is about to be rewritten is not edited
+    const st = MS.run && M.cur ? MS.status.get(M.cur.name) : "";
+    text.readOnly = st === "queued" || st === "working";
+  }
+
+  function topText() {
+    if (!MS.on) return;
+    const n = selectedNames().length, run = MS.run, exit = $q("mkExitSel");
+    $q("mkSelCount").textContent = `${n} selected`;
+    $q("mkSelAll").disabled = $q("mkSelNone").disabled = $q("mkSelInv").disabled = !!run;
+    if (run) {
+      const did = run.done + run.failed, left = run.names.length - did;
+      const eta = did && left ? ` · about ${mmss(((performance.now() - run.t0) / did / 1000) * left)} left` : "";
+      $q("mkMultiText").textContent = `Writing captions: ${did} of ${run.names.length}${run.failed ? ` · ${run.failed} failed` : ""}${eta}`;
+      exit.textContent = run.stop ? "Stopping…" : "Stop processing";
+      exit.disabled = run.stop;
+    } else {
+      $q("mkMultiText").textContent = MS.note || "";
+      exit.textContent = "Exit selection mode";
+      exit.disabled = false;
+    }
+    $q("mkUndoCaps").style.display = !run && MS.undo && MS.undo.after.size ? "" : "none";
+  }
+
+  // the picked set changed, or the list did: keep every view of it in step
+  function multiChanged() {
+    if (!MS.on) return;
+    MS.sel = new Set(selectedNames());                           // what the list no longer shows is not picked any more
+    markSelected(); syncGallery(); ensureFocus(); topText(); syncButtons();
+  }
+  function ensureFocus() {
+    const picked = selectedNames();
+    if (!picked.length) {
+      if (MS.canvas) backToGallery();
+      if (M.cur) closePicture();
+      return;
+    }
+    if (MS.canvas) return;                                       // the picture in the canvas stays whatever is picked
+    if (!M.cur || !MS.sel.has(M.cur.name)) MS.focusing = open(M.items.findIndex((it) => it[0] === picked[0]));
+  }
+
+  function setPicked(name, on) {
+    if (MS.run) return;
+    if (on) MS.sel.add(name); else MS.sel.delete(name);
+    multiChanged();
+  }
+  function pickAt(i, e) {                                        // a click on the strip: pick or unpick; Shift picks a range
+    if (MS.run || !M.items[i]) return;
+    if (e && e.shiftKey && MS.anchor >= 0) {
+      for (let k = Math.min(MS.anchor, i); k <= Math.max(MS.anchor, i); k++) MS.sel.add(M.items[k][0]);
+    } else {
+      const name = M.items[i][0];
+      if (MS.sel.has(name)) MS.sel.delete(name); else MS.sel.add(name);
+      MS.anchor = i;
+    }
+    multiChanged();
+  }
+  function pickAll() { if (MS.run) return; MS.sel = new Set(M.items.map((it) => it[0])); multiChanged(); }
+  function pickNone() { if (MS.run) return; MS.sel = new Set(); multiChanged(); }
+  function pickInvert() {
+    if (MS.run) return;
+    MS.sel = new Set(M.items.filter((it) => !MS.sel.has(it[0])).map((it) => it[0]));
+    multiChanged();
+  }
+
+  async function enterSelection() {
+    if (MS.on || !M.folder || !M.items.length || M.modal) return;
+    try { await flush(); } catch (e) { status(e.message, "err"); return; }
+    clearFrame();
+    Object.assign(MS, {on: true, canvas: false, anchor: M.index, status: new Map(), errors: new Map(), undo: null, note: "",
+      sel: new Set(M.cur ? [M.cur.name] : [])});
+    root.classList.add("multi", "gal");
+    status("");
+    markSelected(); syncGallery(); topText(); syncButtons();
+  }
+  function exitSelection(force = false) {
+    if (!MS.on || (MS.run && !force)) return;
+    Object.assign(MS, {on: false, canvas: false, sel: new Set(), status: new Map(), errors: new Map(), undo: null, note: "", run: null});
+    MS.tiles.clear(); gallery.replaceChildren();
+    text.readOnly = false;
+    root.classList.remove("multi", "gal");
+    markSelected(); syncButtons(); resize(); focusHome();
+  }
+
+  async function focusTile(name) {                               // a click on a tile: its caption is shown below, to edit
+    if (M.cur && M.cur.name === name) return;
+    const i = M.items.findIndex((it) => it[0] === name);
+    if (i >= 0) await open(i);
+  }
+  async function expand(name) {                                  // a double click: the picture in the canvas, to look and to frame
+    const i = M.items.findIndex((it) => it[0] === name);
+    if (i < 0) return;
+    MS.canvas = true;
+    root.classList.remove("gal");
+    await open(i);
+    resize(); topText(); syncButtons();
+  }
+  async function backToGallery() {
+    if (!MS.on || !MS.canvas) return;
+    try { await flush(); } catch (e) { status(e.message, "err"); }
+    MS.canvas = false;
+    root.classList.add("gal");
+    syncGallery(); topText(); syncButtons();
+    const n = M.cur && MS.tiles.get(M.cur.name);
+    if (n) n.scrollIntoView({block: "nearest"});
+  }
+
+  function goSelected(d) {                                       // Prev / Next and PgUp / PgDn walk the picked pictures
+    const names = selectedNames();
+    if (!names.length) return;
+    const at = M.cur ? names.indexOf(M.cur.name) : -1;
+    const to = at < 0 ? (d > 0 ? 0 : names.length - 1) : at + d;
+    if (to < 0 || to >= names.length) return;
+    return open(M.items.findIndex((it) => it[0] === names[to]));
+  }
+  async function openNearestPicked(at) {                         // after a picture went: the picked one nearest to its place
+    const picked = selectedNames();
+    if (!picked.length) { closePicture(); return; }
+    const idx = picked.map((n) => M.items.findIndex((it) => it[0] === n));
+    await open(idx.find((i) => i >= at) ?? idx[idx.length - 1]);
+  }
+
+  // Trigger word, for every picked picture that has a caption (a picture without one stays without)
+  async function addTriggerMany() {
+    const names = selectedNames();
+    if (!names.length || !M.trigger || MS.run || M.busy) return;
+    try { await flush(); } catch (e) { status(e.message, "err"); return; }
+    let changed = 0, skipped = 0, failed = 0;
+    M.busy = true; syncButtons();
+    try {
+      for (const name of names) {
+        try {
+          const info = await api(url("info", {name, ext: capExtNow()}));
+          if (!info.caption) { skipped++; continue; }
+          const next = G.withTrigger(info.caption, M.trigger);
+          if (next === info.caption.trim()) continue;
+          await api("/api/caption", {folder: M.folder, name, text: next, loaded: info.caption, ext: capExtNow()});
+          changed++;
+          setDot(name, true);
+          if (M.cur && M.cur.name === name) { text.value = next; M.cur.loaded = next; M.dirty = false; }
+        } catch (e) { failed++; }
+      }
+    } finally { M.busy = false; syncButtons(); }
+    status(`The trigger word is first in ${plural(changed, "caption")}${skipped ? `; ${plural(skipped, "picture")} without a caption left alone` : ""}${failed ? `; ${failed} failed` : ""}.`,
+      failed ? "warn" : "ok");
+  }
+
+  // Regenerate the captions of all the picked pictures, one after another. Each caption is written as soon as it is ready (the old
+  // one is kept in .monkap/backups), so Stop leaves the finished ones as they are; Undo captions puts the old texts back.
+  async function regenerateMany(hint = "") {
+    const names = selectedNames();
+    if (!names.length || MS.run || regen || enh || M.busy) return;
+    if (!M.settings.lm_model) { openSettings("ai"); return; }
+    hint = typeof hint === "string" ? hint.trim() : "";
+    try { await flush(); } catch (e) { status(e.message, "err"); return; }
+    MS.status = new Map(names.map((n) => [n, "queued"]));
+    MS.errors = new Map();
+    MS.undo = {before: new Map(), after: new Map()};
+    MS.note = "";
+    const run = MS.run = {names, stop: false, done: 0, failed: 0, streak: 0, t0: performance.now()};
+    for (const n of names) paintTile(n);
+    status("");
+    syncButtons(); topText(); lockText();
+    let why = "";
+    for (const name of names) {
+      if (run.stop) break;
+      MS.status.set(name, "working"); paintTile(name); lockText();
+      try {
+        const r = await api("/api/recaption", {folder: M.folder, name, hint});
+        MS.status.set(name, "done"); run.done++; run.streak = 0;
+        MS.undo.before.set(name, r.before); MS.undo.after.set(name, r.caption);
+        setDot(name, true);
+        const c = M.cur;
+        if (c && c.name === name) { text.value = r.caption; c.loaded = r.caption; M.dirty = false; triggerState(); }
+      } catch (e) {
+        MS.status.set(name, "failed"); MS.errors.set(name, e.message); run.failed++; run.streak++;
+        if (run.streak >= 3) { why = ` It stopped after three failures in a row: ${e.message}`; run.stop = true; }
+      }
+      paintTile(name); topText();
+    }
+    for (const n of names) if (MS.status.get(n) === "queued") { MS.status.delete(n); paintTile(n); }   // never reached: unmarked
+    MS.run = null;
+    MS.note = `${plural(run.done, "caption")} updated${run.failed ? `, ${run.failed} failed` : ""}${run.stop && !why ? " (stopped)" : ""}`;
+    lockText(); syncButtons(); topText();
+    status(`Captions updated for ${plural(run.done, "picture")}${run.failed ? `, ${run.failed} failed (hover the red label)` : ""}${run.stop && !why ? ", then stopped" : ""}.${why}`,
+      run.failed || why ? "warn" : "ok");
+  }
+
+  async function undoCaptions() {
+    const u = MS.undo;
+    if (!u || MS.run || M.busy) return;
+    MS.undo = null; MS.note = ""; topText();
+    let back = 0, failed = 0;
+    M.busy = true; syncButtons();
+    try {
+      for (const [name, after] of u.after) {
+        const before = u.before.get(name) || "";
+        try {
+          await api("/api/caption", {folder: M.folder, name, text: before, loaded: after, ext: capExtNow()});
+          back++;
+          MS.status.delete(name); paintTile(name); setDot(name, !!before);
+          if (M.cur && M.cur.name === name) { text.value = before; M.cur.loaded = before || null; M.dirty = false; triggerState(); }
+        } catch (e) { failed++; }
+      }
+    } finally { M.busy = false; syncButtons(); topText(); }
+    status(`The previous captions are back for ${plural(back, "picture")}${failed ? `; ${failed} could not be restored` : ""}.`, failed ? "warn" : "ok");
+  }
+
+  // Delete selected: always asked, whatever the settings say about asking
+  async function requestDeleteMany() {
+    const names = selectedNames();
+    if (!names.length || M.busy || MS.run) return;
+    const soft = (M.settings || {}).delete_mode !== "hard";
+    const shown = names.slice(0, 8);
+    const body = el("div", {},
+      el("p", {class: "lead", text: soft
+        ? "The pictures and their captions move into this folder's removed/ folder; Undo brings them all back."
+        : "The pictures and their captions are erased for good. This cannot be undone."}),
+      el("div", {class: "quote", text: shown.join("\n") + (names.length > shown.length ? `\n… and ${names.length - shown.length} more` : "")}));
+    const title = soft ? `Remove ${plural(names.length, "picture")}?` : `Delete ${plural(names.length, "picture")} for good?`;
+    if (!(await confirmDialog(title, body, soft ? `Remove ${names.length}` : `Delete ${names.length}`, soft))) return;
+    M.busy = true; syncButtons();
+    const focusGoes = !!M.cur && names.includes(M.cur.name);
+    if (focusGoes) M.dirty = false;                              // a caption of a picture that is going is not saved
+    else { try { await flush(); } catch (e) { /* the page stays as it is */ } }
+    try {
+      const r = await api("/api/delete_many", {folder: M.folder, names, ext: capExtNow()});
+      const gone = new Set(r.deleted);
+      if (M.cur && gone.has(M.cur.name)) closePicture();
+      for (const n of gone) MS.sel.delete(n);
+      M.busy = false;
+      M.items = await fetchList();
+      M.index = M.cur ? M.items.findIndex((it) => it[0] === M.cur.name) : -1;
+      MS.focusing = null;
+      drawStrip(true);
+      await MS.focusing;                                           // the picture that takes the focus clears the status line: wait for it
+      if (!M.items.length) message("No pictures left in this folder.");
+      const bad = r.failed.length ? `; ${plural(r.failed.length, "picture")} could not be removed (${r.failed[0].error})` : "";
+      if (r.mode === "soft") {
+        MS.lastMany = r.moved.length ? {moved: r.moved, names: r.deleted} : null;
+        status(`${plural(r.deleted.length, "picture")} moved to removed/${bad}.`, r.failed.length ? "warn" : "ok",
+          MS.lastMany ? {label: "Undo", run: undoDeleteMany} : null);
+      } else {
+        status(`${plural(r.deleted.length, "picture")} deleted${r.purged ? ` (${plural(r.purged, "cached latent file")} too)` : ""}${bad}.`, r.failed.length ? "warn" : "ok");
+      }
+    } catch (e) { M.busy = false; status(`Could not delete: ${e.message}`, "err"); }
+    finally { syncButtons(); }
+  }
+  async function undoDeleteMany() {
+    const d = MS.lastMany;
+    if (!d) return;
+    MS.lastMany = null;
+    try {
+      await api("/api/undelete", {folder: M.folder, moved: d.moved});
+      M.items = await fetchList();
+      if (MS.on) for (const n of d.names) MS.sel.add(n);        // they come back picked
+      MS.focusing = null;
+      drawStrip(true);
+      await MS.focusing;
+      status(`${plural(d.names.length, "picture")} back.`, "ok");
+    } catch (e) { status(`Undo failed: ${e.message}`, "err"); }
+  }
+
   // ---- delete ---------------------------------------------------------------------------------------------------
   async function requestDelete() {
     const c = M.cur;
-    if (!c || M.busy) return;
+    if (!c || M.busy || MS.run) return;
     const s = M.settings || {};
     const soft = s.delete_mode !== "hard";
     if (s.confirm_delete !== false) {
@@ -904,11 +1251,13 @@
     try {
       const r = await api("/api/delete", {folder: M.folder, name, ext: capExtNow()});
       M.items.splice(at, 1);
+      MS.sel.delete(name);
       M.thumbs.clear(); stripIn.replaceChildren();
       closePicture();
       M.busy = false;
       M.index = -1;
       if (!M.items.length) { drawStrip(true); message("No pictures left in this folder."); }
+      else if (MS.on) { drawStrip(true); await openNearestPicked(at); }
       else { drawStrip(true); await open(Math.min(at, M.items.length - 1)); }
       if (r.mode === "soft") {
         M.lastDelete = {moved: r.moved, name};
@@ -976,7 +1325,7 @@
   const nativePicker = () => !!(window.pywebview && window.pywebview.api && window.pywebview.api.pick_folder);
 
   async function openFolderDialog() {
-    if (M.modal) return;
+    if (M.modal || MS.run) return;
     const path = el("input", {type: "text", spellcheck: "false", placeholder: "Folder path", value: M.folder || "", style: "flex:1 1 280px"});
     const trig = el("input", {type: "text", spellcheck: "false", placeholder: "optional, e.g. ohwx", value: M.trigger || ""});
     const list = el("div", {class: "mk-browse"});
@@ -1341,9 +1690,17 @@
     if (!active() || M.modal) return;
     const typing = e.target instanceof Element && e.target.closest("textarea, input:not([type=range]), select, [contenteditable]");
     const mod = e.ctrlKey || e.altKey || e.metaKey;
+    const plain = e.target === document.body || e.target === gallery || e.target === stage;
+    if (MS.on && !typing && (e.ctrlKey || e.metaKey) && e.code === "KeyA") { e.preventDefault(); pickAll(); return; }
+    if (MS.on && !typing && !mod && e.code === "Space" && plain) {
+      e.preventDefault();
+      if (!e.repeat && M.cur) setPicked(M.cur.name, !MS.sel.has(M.cur.name));
+      return;
+    }
+    if (inGallery() && !typing && !mod && e.key === "Enter" && plain && M.cur) { e.preventDefault(); expand(M.cur.name); return; }
     if (e.code === "KeyC" && !mod && !e.shiftKey && !typing) {   // by the physical key: any layout, any NumLock
       e.preventDefault();
-      if (!e.repeat) kapture();                                  // a held key is ONE crop
+      if (!e.repeat && !inGallery()) kapture();                  // a held key is ONE crop
     } else if (e.key === "Escape") {
       if (pop) { closePop(); return; }
       if (M.frame || typing) { e.preventDefault(); clearFrame(); text.focus({preventScroll: true}); }
@@ -1354,7 +1711,7 @@
       const sel = e.target === text && text.selectionStart !== text.selectionEnd;
       if (sel) return;                                           // Shift+Delete is Cut when text is selected
       e.preventDefault();
-      if (!e.repeat) requestDelete();                            // a held key is ONE picture
+      if (!e.repeat) { if (inGallery()) requestDeleteMany(); else requestDelete(); }     // a held key is ONE delete
     } else if (e.key.startsWith("Arrow") && !typing && M.frame && e.target === stage) {
       e.preventDefault();
       nudge(e.key, e.shiftKey, e.ctrlKey);
@@ -1365,12 +1722,12 @@
   $q("mkPrev").addEventListener("click", () => go(-1));
   $q("mkNext").addEventListener("click", () => go(1));
   $q("mkKapture").addEventListener("click", kapture);
-  $q("mkDelete").addEventListener("click", requestDelete);
+  $q("mkDelete").addEventListener("click", () => (inGallery() ? requestDeleteMany() : requestDelete()));
   $q("mkFit").addEventListener("click", fitView);
   $q("mkActual").addEventListener("click", actualSize);
   $q("mkZoomIn").addEventListener("click", () => zoomBy(1.25));
   $q("mkZoomOut").addEventListener("click", () => zoomBy(0.8));
-  $q("mkTrigger").addEventListener("click", addTrigger);
+  $q("mkTrigger").addEventListener("click", () => (inGallery() ? addTriggerMany() : addTrigger()));
   $q("mkSettings").addEventListener("click", openSettings);
   $q("mkHelp").addEventListener("click", openHelp);
   $q("mkChange").addEventListener("click", (e) => { e.preventDefault(); openFolderDialog(); });
@@ -1386,7 +1743,14 @@
     $q("mkDrawer").textContent = open ? "Pictures ▴" : "Pictures ▾";
     if (open) { drawStrip(true); scrollStripTo(M.index); }
   });
-  $q("mkRegen").addEventListener("click", () => regenerate());
+  $q("mkRegen").addEventListener("click", () => (inGallery() ? regenerateMany() : regenerate()));
+  $q("mkSelEnter").addEventListener("click", enterSelection);
+  $q("mkSelAll").addEventListener("click", pickAll);
+  $q("mkSelNone").addEventListener("click", pickNone);
+  $q("mkSelInv").addEventListener("click", pickInvert);
+  $q("mkBackGal").addEventListener("click", backToGallery);
+  $q("mkUndoCaps").addEventListener("click", undoCaptions);
+  $q("mkExitSel").addEventListener("click", () => { if (MS.run) { MS.run.stop = true; topText(); } else exitSelection(); });
   $q("mkHintBtn").addEventListener("click", () => openHint("regen"));
   $q("mkEnhance").addEventListener("click", () => enhance());
   $q("mkEnhHintBtn").addEventListener("click", () => openHint("enhance"));
@@ -1412,7 +1776,8 @@
       [key("Esc"), "drop the frame and go back to typing"],
       [key("PgUp"), "previous picture"],
       [key("PgDn"), "next picture"],
-      [key("⇧", "Del"), "delete this picture (the caption box keeps Cut when text is selected)"]];
+      [key("⇧", "Del"), "delete this picture (the caption box keeps Cut when text is selected)"],
+      [txt("Enter selection mode"), "pick pictures in the strip (Shift+click a range; Ctrl+A, Space and Enter work outside the caption box) to write their captions again, add the trigger word or delete them together; deleting always asks"]];
     const list = el("dl", {class: "mk-keys"});
     for (const [k, what] of rows) list.append(el("dt", {}, k), el("dd", {text: what}));
     const close = el("button", {class: "btn btn-primary", text: "Close"});
@@ -1450,7 +1815,7 @@
   // program adding or rewriting files, a new trigger word or extension in Fizgig) shows within a few seconds -----------
   let live = null, liveBusy = false;
   async function liveTick() {
-    if (liveBusy || document.hidden || !M.folder || M.busy || regen) return;
+    if (liveBusy || document.hidden || !M.folder || M.busy || regen || MS.run) return;
     liveBusy = true;
     try {
       const c = M.cur;

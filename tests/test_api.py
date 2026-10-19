@@ -225,6 +225,28 @@ class DeleteApiTests(ApiCase):
     def test_deleting_a_name_that_is_not_there_is_404(self):
         self.assertEqual(call_post("/api/delete", {"folder": self.ds, "name": "gone.png"}).code, 404)
 
+    def test_many_soft_one_undo_for_the_whole_pack_and_a_missing_one_does_not_stop_the_rest(self):
+        h = call_post("/api/delete_many", {"folder": self.ds, "names": ["img_2.png", "gone.png", "img_10.png"]})
+        self.assertEqual((h.code, h.data["mode"]), (200, "soft"))
+        self.assertEqual(h.data["deleted"], ["img_2.png", "img_10.png"])
+        self.assertEqual([f["name"] for f in h.data["failed"]], ["gone.png"])
+        self.assertEqual(sorted(n for n in os.listdir(self.ds) if os.path.isfile(os.path.join(self.ds, n))), ["img_1.jpg"])
+        back = call_post("/api/undelete", {"folder": self.ds, "moved": h.data["moved"]}).data["restored"]
+        self.assertEqual(sorted(back), ["img_10.png", "img_2.png", "img_2.txt"])
+        self.assertTrue(os.path.isfile(os.path.join(self.ds, "img_2.png")) and os.path.isfile(os.path.join(self.ds, "img_10.png")))
+
+    def test_many_hard_erases_them_and_asks_for_something_to_delete(self):
+        call_post("/api/settings", {"settings": {"delete_mode": "hard"}})
+        h = call_post("/api/delete_many", {"folder": self.ds, "names": ["img_2.png", "img_1.jpg"]})
+        self.assertEqual((h.data["mode"], h.data["deleted"]), ("hard", ["img_2.png", "img_1.jpg"]))
+        self.assertEqual(sorted(os.listdir(self.ds)), ["img_10.png"])
+        self.assertEqual(call_post("/api/delete_many", {"folder": self.ds, "names": []}).code, 400)
+        self.assertEqual(call_post("/api/delete_many", {"folder": self.ds, "names": "img_10.png"}).code, 400)
+
+    def test_names_that_are_not_plain_file_names_fail_one_by_one_not_as_a_whole(self):
+        h = call_post("/api/delete_many", {"folder": self.ds, "names": ["../x.png", "img_2.png"]})
+        self.assertEqual((h.code, h.data["deleted"], len(h.data["failed"])), (200, ["img_2.png"], 1))
+
 
 class SettingsApiTests(ApiCase):
     def test_defaults_roundtrip_and_garbage(self):
