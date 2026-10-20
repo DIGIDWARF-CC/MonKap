@@ -23,7 +23,8 @@
   let enh = null;                        // an Enhance run is open in its window: {c}
   // selection mode: sel = the picked names, canvas = one picture opened from the gallery, run = captions being written
   const MS = {on: false, canvas: false, sel: new Set(), anchor: -1, tiles: new Map(), status: new Map(), errors: new Map(),
-    run: null, undo: null, note: "", lastMany: null, focusing: null};
+    run: null, undo: null, note: "", lastMany: null, focusing: null,
+    folder: "", memory: new Map()};                              // memory: folder -> the names picked there, kept while the page is open
   const $q = (id) => document.getElementById(id);
   const root = $q("mk"), stage = $q("mkStage"), cv = $q("mkCanvas"), ctx = cv.getContext("2d");
   const text = $q("mkText"), strip = $q("mkStrip"), stripIn = $q("mkStripIn");
@@ -976,7 +977,9 @@
   function topText() {
     if (!MS.on) return;
     const n = selectedNames().length, run = MS.run, exit = $q("mkExitSel");
-    $q("mkSelCount").textContent = `${n} selected`;
+    const hidden = MS.sel.size - n;
+    $q("mkSelCount").textContent = `${n} selected` + (hidden > 0 ? ` (+${hidden} hidden)` : "");
+    $q("mkSelCount").title = hidden > 0 ? `${hidden} more picked, hidden by the filter: they stay picked, but nothing acts on them while hidden` : "";
     $q("mkSelAll").disabled = $q("mkSelNone").disabled = $q("mkSelInv").disabled = !!run;
     if (run) {
       const did = run.done + run.failed, left = run.names.length - did;
@@ -995,7 +998,8 @@
   // the picked set changed, or the list did: keep every view of it in step
   function multiChanged() {
     if (!MS.on) return;
-    MS.sel = new Set(selectedNames());                           // what the list no longer shows is not picked any more
+    const exist = new Set(M.raw.map((it) => it[0]));
+    MS.sel = new Set([...MS.sel].filter((n) => exist.has(n)));   // gone from the folder: not picked any more; hidden by a filter: still picked
     markSelected(); syncGallery(); ensureFocus(); topText(); syncButtons();
   }
   function ensureFocus() {
@@ -1025,11 +1029,11 @@
     }
     multiChanged();
   }
-  function pickAll() { if (MS.run) return; MS.sel = new Set(M.items.map((it) => it[0])); multiChanged(); }
+  function pickAll() { if (MS.run) return; for (const it of M.items) MS.sel.add(it[0]); multiChanged(); }
   function pickNone() { if (MS.run) return; MS.sel = new Set(); multiChanged(); }
   function pickInvert() {
     if (MS.run) return;
-    MS.sel = new Set(M.items.filter((it) => !MS.sel.has(it[0])).map((it) => it[0]));
+    for (const it of M.items) { if (MS.sel.has(it[0])) MS.sel.delete(it[0]); else MS.sel.add(it[0]); }   // hidden ones stay as they are
     multiChanged();
   }
 
@@ -1037,14 +1041,21 @@
     if (MS.on || !M.folder || !M.items.length || M.modal) return;
     try { await flush(); } catch (e) { status(e.message, "err"); return; }
     clearFrame();
+    const exist = new Set(M.raw.map((it) => it[0]));
+    const kept = new Set([...(MS.memory.get(M.folder) || [])].filter((n) => exist.has(n)));   // what is still in the folder
     Object.assign(MS, {on: true, canvas: false, anchor: M.index, status: new Map(), errors: new Map(), undo: null, note: "",
-      sel: new Set(M.cur ? [M.cur.name] : [])});
+      folder: M.folder, sel: kept.size ? kept : new Set(M.cur ? [M.cur.name] : [])});
     root.classList.add("multi", "gal");
     status("");
     markSelected(); syncGallery(); topText(); syncButtons();
+    MS.focusing = null;
+    ensureFocus();                                               // the picture shown below is one of the picked
+    await MS.focusing;                                           // (opening one clears the status line: say it after)
+    if (kept.size) status(`The selection from before is back: ${plural(kept.size, "picture")} picked (Select none clears it).`);
   }
   function exitSelection(force = false) {
     if (!MS.on || (MS.run && !force)) return;
+    if (MS.sel.size) MS.memory.set(MS.folder, new Set(MS.sel)); else MS.memory.delete(MS.folder);
     Object.assign(MS, {on: false, canvas: false, sel: new Set(), status: new Map(), errors: new Map(), undo: null, note: "", run: null});
     MS.tiles.clear(); gallery.replaceChildren();
     text.readOnly = false;
@@ -1777,7 +1788,7 @@
       [key("PgUp"), "previous picture"],
       [key("PgDn"), "next picture"],
       [key("⇧", "Del"), "delete this picture (the caption box keeps Cut when text is selected)"],
-      [txt("Enter selection mode"), "pick pictures in the strip (Shift+click a range; Ctrl+A, Space and Enter work outside the caption box) to write their captions again, add the trigger word or delete them together; deleting always asks"]];
+      [txt("Enter selection mode"), "pick pictures in the strip (Shift+click a range; Ctrl+A, Space and Enter work outside the caption box) to write their captions again, add the trigger word or delete them together; deleting always asks. The pick is remembered for each folder until the page is closed"]];
     const list = el("dl", {class: "mk-keys"});
     for (const [k, what] of rows) list.append(el("dt", {}, k), el("dd", {text: what}));
     const close = el("button", {class: "btn btn-primary", text: "Close"});
