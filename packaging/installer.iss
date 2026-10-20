@@ -24,6 +24,9 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
+; always ask where to install, even when MonKap is already installed (the default `auto` skips the page then);
+; the folder used last time is still the one offered
+DisableDirPage=no
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
