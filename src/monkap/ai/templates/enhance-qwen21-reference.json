@@ -19,6 +19,11 @@
     "inputs": {"images": ["12", 0]},
     "_meta": {"title": "MonKap Result v1 (do not alter)"}
   },
+  "13": {
+    "class_type": "PrimitiveInt",
+    "inputs": {"value": 1448},
+    "_meta": {"title": "MonKap Size v1 (do not alter)"}
+  },
   "5": {
     "class_type": "UNETLoader",
     "inputs": {"unet_name": "qwen_image_2.1_int8_convrot.safetensors", "weight_dtype": "default"},
@@ -44,7 +49,7 @@
     "inputs": {
       "prompt": ["2", 0],
       "negative_prompt": ["8", 0],
-      "resolution": 1024,
+      "resolution": ["13", 0],
       "clip": ["6", 0],
       "vae": ["7", 0],
       "images.image_1": ["1", 0]

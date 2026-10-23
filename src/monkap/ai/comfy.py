@@ -24,9 +24,9 @@ from .wsclient import BINARY, WebSocket, WebSocketError
 
 DEFAULT_URL = "http://127.0.0.1:8188"
 SUPPORTED_VERSION = 1                       # the template contract this MonKap speaks (the `v1` in the titles)
-MARK = re.compile(r"^\s*MonKap\s+(Image|Prompt|Seed|Result)\b(?:\s+v(\d+))?", re.I)
+MARK = re.compile(r"^\s*MonKap\s+(Image|Prompt|Seed|Size|Result)\b(?:\s+v(\d+))?", re.I)
 # the input of a marked node that MonKap writes (or, for the result, reads the node's images from)
-FIELDS = {"image": ("image",), "prompt": ("value", "text", "prompt"), "seed": ("value", "seed"), "result": ("images",)}
+FIELDS = {"image": ("image",), "prompt": ("value", "text", "prompt"), "seed": ("value", "seed"), "size": ("value",), "result": ("images",)}
 REQUIRED = ("image", "result")
 
 
@@ -106,20 +106,22 @@ def parse_template(data) -> Template:
         raise TemplateError(f"The template is version {max(versions)}, newer than this MonKap understands "
                             f"({SUPPORTED_VERSION}). Update MonKap.")
     anc = _ancestors(graph, nodes["result"])
-    for role in ("image", "prompt", "seed"):
+    for role in ("image", "prompt", "seed", "size"):
         if role in nodes and nodes[role] not in anc:
             raise TemplateError(f"The result does not depend on the \"MonKap {role.capitalize()}\" node: a link is missing.")
     return Template(graph=graph, nodes=nodes, fields=fields, version=min(versions))
 
 
-def prepare(t: Template, image_ref: str, prompt: str | None = None, seed: int | None = None) -> dict:
-    """A copy of the graph with the uploaded picture, the prompt and the seed written into the marked nodes."""
+def prepare(t: Template, image_ref: str, prompt: str | None = None, seed: int | None = None, size: int | None = None) -> dict:
+    """A copy of the graph with the uploaded picture, the prompt, the seed and the size written into the marked nodes."""
     g = copy.deepcopy(t.graph)
     g[t.nodes["image"]]["inputs"][t.fields["image"]] = image_ref
     if prompt is not None and "prompt" in t.nodes:
         g[t.nodes["prompt"]]["inputs"][t.fields["prompt"]] = prompt
     if seed is not None and "seed" in t.nodes:
         g[t.nodes["seed"]]["inputs"][t.fields["seed"]] = int(seed)
+    if size is not None and "size" in t.nodes:
+        g[t.nodes["size"]]["inputs"][t.fields["size"]] = int(size)
     return g
 
 
@@ -276,8 +278,9 @@ class Job:
     `result` the finished picture's bytes."""
 
     def __init__(self, client: Client, template: Template, image: bytes, ext: str = ".png", prompt: str | None = None,
-                 seed: int | None = None):
+                 seed: int | None = None, size: int | None = None):
         self.client, self.template, self.image = client, template, image
+        self.size = size
         self.ext = ext if re.fullmatch(r"\.[A-Za-z0-9]{1,5}", ext or "") else ".png"
         self.prompt, self.seed = prompt, seed
         self.status = "queued"              # queued -> running -> done | error | cancelled
@@ -339,7 +342,7 @@ class Job:
                 self._set(live=False)
             self._set(status="running", stage="Sending the picture")
             ref = self.client.upload(self.image, f"monkap_{uuid.uuid4().hex[:10]}{self.ext}")
-            self._pid = self.client.queue(prepare(self.template, ref, self.prompt, self.seed), cid)
+            self._pid = self.client.queue(prepare(self.template, ref, self.prompt, self.seed, self.size), cid)
             self._set(stage="Waiting for ComfyUI")
             outcome = self._watch(ws) if ws else self._poll()
             if self._cancel.is_set() or outcome == "cancelled":

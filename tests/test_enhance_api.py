@@ -77,6 +77,22 @@ class RunTests(Case):
         base = "Enhance quality, reduce noise and blur, make clean and sharp, keep the content unchanged"
         self.assertEqual((sent["2"]["inputs"]["value"], sent["3"]["inputs"]["value"]), (base + ". sharper, only the face", seed))
 
+    def test_the_size_setting_reaches_the_template_per_picture(self):
+        for setting, want in (("1mp", 1024), ("2mp", 1448), ("4mp", 2048), ("original", 256)):    # the test picture is 60x40
+            call_post("/api/settings", {"settings": {"enhance_size": setting}})
+            self.start()
+            self.wait()
+            self.assertEqual(self.fc.prompts[-1]["13"]["inputs"]["value"], want, setting)
+            enhance._run = None
+        self.assertEqual(enhance.size_side("original", 3000, 2000), 2048 if (3000 * 2000) ** 0.5 > 2048 else round((3000 * 2000) ** 0.5 / 32) * 32)
+        self.assertEqual(enhance.size_side("original", 1920, 1440), 1664)
+        self.assertEqual(enhance.size_side("original", 8000, 6000), 2048)                         # at most 4 MP
+
+    def test_a_bad_size_setting_falls_back_and_check_says_whether_the_template_has_the_size_node(self):
+        call_post("/api/settings", {"settings": {"enhance_size": "huge"}})
+        self.assertEqual(call_get("/api/state").data["settings"]["enhance_size"], "2mp")
+        self.assertTrue(call_get("/api/enhance/check").data["has_size"])
+
     def test_the_hint_is_added_to_the_settings_prompt_not_put_in_its_place(self):
         call_post("/api/settings", {"settings": {"enhance_prompt": "make it crisp"}})
         self.start(hint="only the face")

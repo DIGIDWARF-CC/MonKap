@@ -30,7 +30,7 @@ CLASSES = {"LoadImage": ["image"], "PrimitiveStringMultiline": ["value"], "Primi
 class TemplateTests(unittest.TestCase):
     def test_the_reference_template_is_valid_and_its_markers_are_found(self):
         t = comfy.parse_template(reference())
-        self.assertEqual(t.nodes, {"image": "1", "prompt": "2", "seed": "3", "result": "4"})
+        self.assertEqual(t.nodes, {"image": "1", "prompt": "2", "seed": "3", "size": "13", "result": "4"})
         self.assertEqual((t.fields["image"], t.fields["prompt"], t.fields["seed"], t.fields["result"]),
                          ("image", "value", "value", "images"))
         self.assertEqual(t.version, 1)
@@ -52,6 +52,9 @@ class TemplateTests(unittest.TestCase):
         del g["2"], g["3"]
         g["9"]["inputs"]["prompt"] = "fixed"
         g["10"]["inputs"]["seed"] = 5
+        self.assertEqual(sorted(comfy.parse_template(g).nodes), ["image", "result", "size"])      # (the size node is the reference's)
+        del g["13"]
+        g["9"]["inputs"]["resolution"] = 1024
         self.assertEqual(sorted(comfy.parse_template(g).nodes), ["image", "result"])
         g = reference()
         g["1"]["_meta"]["title"] = "Load Image"
@@ -91,6 +94,21 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual((g["2"]["inputs"]["value"], g["3"]["inputs"]["value"]), ("sharper", 77))
         self.assertEqual(t.graph["1"]["inputs"]["image"], "example.png")
         self.assertEqual(comfy.prepare(t, "x [temp]")["2"]["inputs"]["value"], t.graph["2"]["inputs"]["value"])
+
+    def test_the_size_marker_is_optional_written_when_given_and_must_be_linked(self):
+        t = comfy.parse_template(reference())
+        self.assertEqual(comfy.prepare(t, "a [temp]", size=2048)["13"]["inputs"]["value"], 2048)
+        self.assertEqual(comfy.prepare(t, "a [temp]")["13"]["inputs"]["value"], 1448)           # not given: the template's own
+        g = reference()
+        del g["13"]
+        g["9"]["inputs"]["resolution"] = 1024                                                    # an older template: no size node
+        old = comfy.parse_template(g)
+        self.assertNotIn("size", old.nodes)
+        self.assertEqual(comfy.prepare(old, "a [temp]", size=2048)["9"]["inputs"]["resolution"], 1024)
+        g = reference()
+        g["9"]["inputs"]["resolution"] = 1024                                                    # the node is there but feeds nothing
+        with self.assertRaisesRegex(comfy.TemplateError, "MonKap Size"):
+            comfy.parse_template(g)
 
 
 class ProblemsTests(unittest.TestCase):

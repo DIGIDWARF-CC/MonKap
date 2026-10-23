@@ -17,6 +17,14 @@ from .core.settings import MonkapSettings
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai", "templates", "enhance-qwen21-reference.json")
 MAX_PROMPT = 600
+SIZES = {"1mp": 1024, "2mp": 1448, "4mp": 2048}     # the side of a square of that many megapixels, which is what the node asks for
+
+
+def size_side(setting: str, width: int, height: int) -> int:
+    """The `resolution` the template is given: a fixed number of megapixels, or the picture's own size (at most 4 MP)."""
+    if setting in SIZES:
+        return SIZES[setting]
+    return max(256, min(round((width * height) ** 0.5 / 32) * 32, SIZES["4mp"]))
 _lock = threading.Lock()
 _run: dict | None = None                      # {"job", "folder", "name", "path", "prompt"}
 
@@ -54,11 +62,18 @@ def check(s: MonkapSettings) -> dict:
     except comfy.ComfyError as exc:
         return {"ok": False, "error": str(exc), "problems": []}
     return {"ok": not found, "error": "", "problems": found, "roles": sorted(t.nodes), "version": t.version,
-            "custom": bool(s.enhance_template)}
+            "custom": bool(s.enhance_template), "has_size": "size" in t.nodes}
+
+
+def single_busy() -> bool:
+    """The main view's own run is going."""
+    return _run is not None and _run["job"].status in ("queued", "running")
 
 
 def _busy() -> bool:
-    return _run is not None and _run["job"].status in ("queued", "running")
+    """Anything talking to ComfyUI for MonKap: the main view's run or a task of the Enhance lab (one at a time)."""
+    from . import lab                                           # (late: lab imports this module)
+    return single_busy() or lab.running()
 
 
 def start(s: MonkapSettings, folder: str, name: str, hint: str = "", prompt: str | None = None) -> dict:
@@ -73,7 +88,9 @@ def start(s: MonkapSettings, folder: str, name: str, hint: str = "", prompt: str
         words = prompt if prompt is not None else _words(s, template, hint)
         data = _read(path)
         seed = random.randrange(2 ** 32)
-        job = comfy.Job(comfy.Client(s.comfy_url), template, data, os.path.splitext(path)[1], words, seed).start()
+        w, h = dataset.picture_size(path)
+        job = comfy.Job(comfy.Client(s.comfy_url), template, data, os.path.splitext(path)[1], words, seed,
+                        size_side(s.enhance_size, w, h)).start()
         _run = {"job": job, "folder": folder, "name": name, "path": path, "prompt": words, "seed": seed}
     return {"seed": seed}
 

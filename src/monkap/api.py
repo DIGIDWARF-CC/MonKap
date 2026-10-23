@@ -14,7 +14,7 @@ from dataclasses import replace
 
 from PIL import Image
 
-from . import __version__, appdata, dataset, enhance, maintenance
+from . import __version__, appdata, dataset, enhance, lab, maintenance
 from .ai import lmstudio, tasks
 from .core import captions, jobs, journal, ledger
 from .integrations import fizgig, fizgig_review
@@ -311,10 +311,37 @@ def live(folder: str, name: str = "") -> dict:
         except (NotFound, ValueError, OSError):
             caption = None
     return {"folder": folder_stamp, "review": fizgig_review.stamp(s.fizgig_dir, folder) if s.fizgig_dir else "",
-            "ext": ext, "trigger": folder_trigger(folder), "caption": caption, "name": name, **state}
+            "ext": ext, "trigger": folder_trigger(folder), "caption": caption, "name": name,
+            "busy": {"single": enhance.single_busy(), "lab": lab.running()}, **state}
 
 
 # ------------------------------------------------------------------------------------------------ enhance
+
+def _lab_post(action: str, b: dict, ext: str) -> dict:
+    folder = os.path.abspath(str(b.get("folder") or ""))
+    tid = b.get("task")
+    if action == "task":
+        return lab.create_task(load_settings(), folder, b.get("names"), str(b.get("instruction") or ""), str(b.get("title") or ""))
+    if action == "task/update":
+        return lab.update_task(folder, _task_id(tid), b.get("instruction"), b.get("remove"), b.get("title"))
+    if action == "task/delete":
+        return lab.delete_task(folder, _task_id(tid))
+    if action == "start":
+        return lab.start_task(load_settings(), folder, _task_id(tid))
+    if action == "stop":
+        return lab.stop_task(folder, _task_id(tid))
+    if action == "regenerate":
+        return lab.regenerate(load_settings(), folder, str(b.get("name") or ""))
+    if action == "resolve":
+        return lab.resolve(load_settings(), folder, str(b.get("name") or ""), str(b.get("action") or ""), ext, bool(b.get("force")))
+    raise NotFound("Unknown lab action.")
+
+
+def _task_id(v) -> int:
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ValueError("Which task?")
+    return v
+
 
 def _enhance_settings(url=None, template=None) -> MonkapSettings:
     """The settings, with the address and the template as typed in the settings window when they are not saved yet."""
@@ -432,6 +459,13 @@ def get(h, path, qs) -> None:
                                                          one("template") if "template" in qs else None)))
         if path == "/api/enhance/template":
             return h._send(200, enhance.reference_bytes(), "application/json")
+        if path == "/api/lab/state":
+            return h.json(lab.state(one("folder")))
+        if path in ("/api/lab/preview", "/api/lab/result"):
+            got = lab.preview() if path.endswith("preview") else lab.result(one("folder"), one("name"))
+            if got is None:
+                raise NotFound("Nothing to show yet.")
+            return h._send(200, got[0], got[1])
         if path == "/api/data":
             files = appdata.inventory()
             return h.json({"root": appdata.root(), "files": [[os.path.relpath(p, appdata.root()), n] for p, n in files]})
@@ -494,6 +528,8 @@ def post(h, path, b) -> None:
         if path == "/api/enhance/undo":
             return h.json(enhance.undo_replace(str(b.get("folder") or ""), str(b.get("name") or ""), str(b.get("backup") or ""),
                                                str(b.get("old") or ""), bool(b.get("was_enhanced"))))
+        if path.startswith("/api/lab/"):
+            return h.json(_lab_post(path[len("/api/lab/"):], b, ext))
         if path == "/api/data/forget":
             return h.json({"removed": appdata.forget()})
     except NotFound as exc:

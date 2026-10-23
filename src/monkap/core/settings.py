@@ -39,6 +39,7 @@ class MonkapSettings:
     comfy_url: str = ""                    # the ComfyUI that enhances pictures (empty: http://127.0.0.1:8188)
     enhance_template: str = ""            # a template of the user's own (a workflow in API format); empty: the reference
     enhance_prompt: str = ""              # words for the enhance, instead of the template's own
+    enhance_size: str = "2mp"             # the size of the enhanced picture: 1mp / 2mp / 4mp / original (at most 4 MP)
 
     @classmethod
     def from_dict(cls, raw) -> "MonkapSettings":
@@ -82,6 +83,7 @@ class MonkapSettings:
         s.ai_think = bool(s.ai_think)
         s.comfy_url, s.enhance_template = str(s.comfy_url or "").strip(), str(s.enhance_template or "").strip()
         s.enhance_prompt = " ".join(str(s.enhance_prompt or "").split())[:600]
+        s.enhance_size = s.enhance_size if s.enhance_size in ("1mp", "2mp", "4mp", "original") else "2mp"
         return s
 
     def to_dict(self) -> dict:

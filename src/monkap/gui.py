@@ -11,7 +11,7 @@ import sys
 import threading
 import webbrowser
 
-from . import __version__, api, server
+from . import __version__, api, lab, server
 
 TITLE = "MonKap"
 
@@ -68,6 +68,7 @@ def main(argv=None) -> int:
         webview.start(private_mode=True)
     except Exception:
         return _browser(url)
+    lab.shutdown()                                       # the picture in ComfyUI is interrupted, tasks are left stopped
     srv.shutdown()
     return 0
 

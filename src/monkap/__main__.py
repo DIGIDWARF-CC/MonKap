@@ -7,7 +7,7 @@ import sys
 import threading
 import webbrowser
 
-from . import __version__, api, appdata, server
+from . import __version__, api, appdata, lab, server
 
 
 def main(argv=None) -> int:
@@ -32,6 +32,7 @@ def main(argv=None) -> int:
         threading.Event().wait()
     except KeyboardInterrupt:
         pass
+    lab.shutdown()
     srv.shutdown()
     return 0
 
