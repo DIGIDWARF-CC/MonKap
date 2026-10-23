@@ -9,6 +9,10 @@
 </head>
 <body>
 <div class="mk" id="mk">
+  <nav class="mk-rail" id="mkRail" aria-label="Modes">
+    <button type="button" id="mkRailMain" class="on" aria-label="Workbench" title="Workbench"><svg viewBox="0 0 24 24"><path d="M7 3v13a2 2 0 0 0 2 2h12"/><path d="M3 7h13a2 2 0 0 1 2 2v12"/></svg></button>
+    <button type="button" id="mkRailLab" aria-label="Enhance lab" title="Enhance lab"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2.2h12.4A1.5 1.5 0 0 0 19.5 19L14 9V3"/><path d="M7.5 15h9"/></svg></button>
+  </nav>
   <div class="mk-main">
     <div class="mk-multitop" id="mkMultiTop">
       <button class="btn btn-sm" id="mkBackGal" type="button" title="Back to the gallery of the selected pictures"><svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Back to selection gallery</button>
@@ -101,6 +105,7 @@
 </div>
 <script src="/lib.js"></script>
 <script src="/monkap_geo.js"></script>
+<script src="/monkap_lab.js"></script>
 <script src="/monkap.js"></script>
 </body>
 </html>

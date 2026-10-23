@@ -116,6 +116,19 @@ class TaskTests(Case):
         self.assertEqual(st["tasks"][0]["pictures"], ["a.png", "b.png"])      # nothing finished: nothing left the task
         self.assertEqual(self.post("task/update", task=tid, instruction="x").code, 200)
 
+    def test_removing_monkaps_files_is_refused_while_tasks_run_and_lab_files_show_in_the_inventory(self):
+        self.fc.stop()
+        self.fc = FakeComfy(classes=CLASSES, steps=40, step_delay=0.05)
+        call_post("/api/settings", {"settings": {"comfy_url": self.fc.url}})
+        tid = self.task()
+        files = call_get("/api/data").data["files"]
+        self.assertTrue(any(f[0].replace("\\", "/").startswith("lab/") for f in files))
+        self.post("start", task=tid)
+        h = call_post("/api/data/forget", {})
+        self.assertEqual(h.code, 400)
+        self.assertIn("stop them first", h.data["error"])
+        self.post("stop", task=tid)
+
     def test_the_lab_refuses_to_start_while_the_main_view_runs(self):
         self.fc.stop()
         self.fc = FakeComfy(classes=CLASSES, steps=40, step_delay=0.05)
@@ -167,6 +180,23 @@ class TaskTests(Case):
         self.assertEqual((t["id"], t["state"]), (tid, "stopped"))
         self.assertEqual(self.post("start", task=tid).code, 200)
         self.assertEqual(self.wait_idle()["tasks"][0]["state"], "done")
+
+
+class FactsTests(Case):
+    def test_sizes_and_a_blur_score_come_in_the_background_and_a_sharp_picture_scores_higher(self):
+        from PIL import Image, ImageFilter
+        im = Image.effect_noise((300, 200), 60).convert("RGB")
+        im.save(os.path.join(self.ds, "sharp.png"))
+        im.filter(ImageFilter.GaussianBlur(6)).save(os.path.join(self.ds, "soft.png"))
+        got = {"left": 1}
+        end = time.time() + 20
+        while got["left"] and time.time() < end:
+            got = call_get("/api/lab/facts", folder=self.ds).data
+            time.sleep(0.05)
+        self.assertEqual(got["left"], 0)
+        items = got["items"]
+        self.assertEqual(items["sharp.png"][:2], [300, 200])
+        self.assertGreater(items["sharp.png"][2], items["soft.png"][2] * 3)
 
 
 class ResolveTests(Case):

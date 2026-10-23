@@ -157,6 +157,61 @@ def result(folder: str, name: str):
     return None
 
 
+# ------------------------------------------------------------------------------------------------ what the gallery shows of a picture
+
+_facts: dict = {}                      # path -> (mtime, size, width, height, blur): what the lab gallery knows of a picture
+_facts_lock = threading.Lock()
+_facts_job: dict = {}                  # folder -> the thread that is reading them
+
+
+def _blur_score(path: str):
+    """A rough sharpness number: the variance of a Laplacian over the picture shrunk to 384 px (the lower, the blurrier);
+    None for a picture that can't be read. It is for ordering and a hint, not a measurement."""
+    from PIL import Image, ImageFilter, ImageStat
+    try:
+        with Image.open(path) as im:
+            im.draft("L", (768, 768))
+            g = im.convert("L")
+            g.thumbnail((384, 384))
+            lap = g.filter(ImageFilter.Kernel((3, 3), (0, 1, 0, 1, -4, 1, 0, 1, 0), 1, 128))
+            return round(ImageStat.Stat(lap).var[0], 1)
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return None
+
+
+def _read_facts(folder: str, names: list) -> None:
+    for name in names:
+        path = os.path.join(folder, name)
+        stamp = _stat(path)
+        with _facts_lock:
+            have = _facts.get(path)
+        if have and have[:2] == stamp:
+            continue
+        try:
+            w, h = dataset.picture_size(path)
+        except Exception:                                     # unreadable: no size, no blur
+            w = h = 0
+        with _facts_lock:
+            _facts[path] = (*stamp, w, h, _blur_score(path) if w else None)
+
+
+def facts(folder: str) -> dict:
+    """{name: [width, height, blur]} for the pictures read so far, and how many are still to read. The reading goes on in the
+    background (the first call starts it), so a big folder shows its gallery at once and the numbers fill in."""
+    folder = os.path.abspath(folder)
+    names = [r[0] for r in dataset.list_folder(folder, ".txt")]
+    with _facts_lock:
+        out = {n: list(_facts[os.path.join(folder, n)][2:]) for n in names
+               if os.path.join(folder, n) in _facts and _facts[os.path.join(folder, n)][:2] == _stat(os.path.join(folder, n))}
+        job = _facts_job.get(folder)
+        if len(out) < len(names) and (job is None or not job.is_alive()):
+            todo = [n for n in names if n not in out]
+            job = threading.Thread(target=_read_facts, args=(folder, todo), daemon=True)
+            _facts_job[folder] = job
+            job.start()
+    return {"items": out, "left": len(names) - len(out)}
+
+
 # ------------------------------------------------------------------------------------------------ tasks
 
 def create_task(s: MonkapSettings, folder: str, names, instruction: str = "", name: str = "") -> dict:
@@ -422,8 +477,9 @@ def _finish(st: dict, folder: str, tid: int, name: str, job, words, path: str, r
     old = next((p for p in st["pending"] if p["name"] == name), None)
     if old:                                                    # a regenerated result takes the place of the one before it
         _drop_result_file(folder, old["result"])
-        st["pending"].remove(old)
-    st["pending"].append(entry)
+        st["pending"][st["pending"].index(old)] = entry
+    else:
+        st["pending"].append(entry)
     t = _task(st, tid)
     if t:
         _leave(st, tid, name)

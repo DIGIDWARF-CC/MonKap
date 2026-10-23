@@ -461,6 +461,8 @@ def get(h, path, qs) -> None:
             return h._send(200, enhance.reference_bytes(), "application/json")
         if path == "/api/lab/state":
             return h.json(lab.state(one("folder")))
+        if path == "/api/lab/facts":
+            return h.json(lab.facts(one("folder")))
         if path in ("/api/lab/preview", "/api/lab/result"):
             got = lab.preview() if path.endswith("preview") else lab.result(one("folder"), one("name"))
             if got is None:
@@ -531,6 +533,8 @@ def post(h, path, b) -> None:
         if path.startswith("/api/lab/"):
             return h.json(_lab_post(path[len("/api/lab/"):], b, ext))
         if path == "/api/data/forget":
+            if lab.running():
+                raise ValueError("Enhance lab tasks are running: stop them first.")
             return h.json({"removed": appdata.forget()})
     except NotFound as exc:
         return h.json({"error": str(exc)}, 404)

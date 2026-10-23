@@ -23,6 +23,9 @@
   let enh = null;                        // an Enhance run of the main view is open: {c}
   let labBusy = false;                   // tasks of the Enhance lab are going (the server says so in its live answer)
   const LAB_WAIT = "Tasks of the Enhance lab are running: stop them first";
+  const LEAVE_LAB = "Please stop any running enhance tasks before returning to main view";
+  const railMain = document.getElementById("mkRailMain"), railLab = document.getElementById("mkRailLab");
+  let lab = null;                        // the Enhance lab (monkap_lab.js), made once the page's helpers exist
   // selection mode: sel = the picked names, canvas = one picture opened from the gallery, run = captions being written
   const MS = {on: false, canvas: false, sel: new Set(), anchor: -1, tiles: new Map(), status: new Map(), errors: new Map(),
     run: null, undo: null, note: "", lastMany: null, focusing: null,
@@ -247,6 +250,7 @@
     M.ext = r.ext || M.ext;
     M.raw = r.items;
     renderFilter();                                              // the counts of the "Show" list come from these rows
+    if (lab) lab.refreshRows();
     return arrange(r.items);
   }
 
@@ -496,6 +500,7 @@
     root.classList.toggle("has-frame", !!(c && M.frame));
     lockText();
     triggerState();
+    syncRail();
   }
 
   // the trigger word button: shown when the folder has one, greyed out when the caption already has it
@@ -1855,16 +1860,26 @@
       try {
         const r = await api("/api/data");
         const total = r.files.reduce((a, f) => a + f[1], 0);
+        const labFiles = r.files.filter((f) => /^lab[\\/]/.test(f[0]));
+        const labResults = labFiles.filter((f) => !/state\.json$/.test(f[0])).length, labLists = labFiles.length - labResults;
+        const labWarn = labFiles.length ? `It also holds the Enhance lab's work: ${labLists} task list${labLists === 1 ? "" : "s"} and ${labResults} enhanced picture${labResults === 1 ? "" : "s"} still waiting for your decision (${Math.max(1, Math.round(labFiles.reduce((a, f) => a + f[1], 0) / 1048576))} MB). Removing the files deletes them.` : "";
         dataNote.replaceChildren(
           el("div", {text: `MonKap's own files: ${r.root}  (${r.files.length} file${r.files.length === 1 ? "" : "s"}, ${Math.max(1, Math.round(total / 1024))} KB: your settings and the folders you opened).`}),
           el("div", {text: "Inside a dataset folder MonKap keeps a hidden .monkap folder (the crop ledger and caption backups), and nothing else besides the pictures and captions you asked for. Pictures, previews and tiles are made in memory and never written out. Deleting files from a disk doesn't guarantee they can't be recovered."}),
+          labWarn ? el("div", {class: "field-hint warn", text: labWarn}) : null,
           (() => {
             const b = el("button", {class: "btn btn-sm", text: "Remove MonKap's own files…", style: "margin-top:6px"});
             let armed = false;
             b.addEventListener("click", async () => {
-              if (!armed) { armed = true; b.textContent = "Click again: settings and the list of opened folders are deleted (datasets are not touched)"; return; }
-              const x = await api("/api/data/forget", {});
-              dataNote.textContent = `Removed ${x.removed} file(s). The page keeps working with the defaults.`;
+              if (!armed) {
+                armed = true;
+                b.textContent = "Click again: settings and the list of opened folders" + (labFiles.length ? ", and the Enhance lab's tasks and waiting results," : "") + " are deleted (datasets are not touched)";
+                return;
+              }
+              try {
+                const x = await api("/api/data/forget", {});
+                dataNote.textContent = `Removed ${x.removed} file(s). The page keeps working with the defaults.`;
+              } catch (e) { dataNote.textContent = e.message; }
             });
             return b;
           })());
@@ -1920,7 +1935,7 @@
 
   // ---- keys -----------------------------------------------------------------------------------------------------
   document.addEventListener("keydown", (e) => {
-    if (!active() || M.modal) return;
+    if (!active() || M.modal || root.classList.contains("lab")) return;           // the lab has its own keys
     const typing = e.target instanceof Element && e.target.closest("textarea, input:not([type=range]), select, [contenteditable]");
     const mod = e.ctrlKey || e.altKey || e.metaKey;
     if (e.code === "KeyC" && !mod && !e.shiftKey && !typing) {   // by the physical key: any layout, any NumLock
@@ -1942,6 +1957,42 @@
       nudge(e.key, e.shiftKey, e.ctrlKey);
     }
   }, true);
+
+  // ---- the rail: Workbench (this page) and the Enhance lab. Neither way is open while something is running; a greyed icon says why ----
+  function syncRail() {
+    const inLab = root.classList.contains("lab");
+    railMain.classList.toggle("on", !inLab);
+    railLab.classList.toggle("on", inLab);
+    railMain.disabled = inLab && !!(lab && lab.running);
+    railMain.title = railMain.disabled ? LEAVE_LAB : "Workbench";
+    const why = inLab ? "" : !M.folder ? "Open a folder first" : MS.run ? RUN_WAIT : enh ? ENH_WAIT : regen ? "A caption is being written" :
+      MS.on ? "Leave selection mode first" : M.busy ? "Wait a moment: MonKap is working on the folder" : M.modal ? "Close the open window first" : "";
+    railLab.disabled = !!why;
+    railLab.title = why || "Enhance lab: enhance many pictures in tasks, then decide about each result";
+  }
+  async function enterLab() {
+    if (railLab.disabled || root.classList.contains("lab")) return;
+    try { await flush(); } catch (e) { status(e.message, "err"); return; }
+    root.classList.add("lab");
+    await lab.enter();
+    syncRail();
+  }
+  function leaveLab() {
+    if (!root.classList.contains("lab") || (lab && lab.running)) return;
+    lab.leave();
+    root.classList.remove("lab");
+    syncRail();
+    resize();
+  }
+  lab = MonKapLab.create({
+    root, M, url, pills, verdictOf,
+    blocked: () => !!M.modal,
+    refresh: () => refreshList(),
+    forget: (name) => dropBitmap(name),
+    onState: (st) => { if (st.running !== labBusy) { labBusy = st.running; syncButtons(); } syncRail(); },
+  });
+  railLab.addEventListener("click", enterLab);
+  railMain.addEventListener("click", leaveLab);
 
   // ---- wiring ---------------------------------------------------------------------------------------------------
   $q("mkPrev").addEventListener("click", () => go(-1));
@@ -2050,6 +2101,10 @@
       live = now;
       const lb = !!(now.busy && now.busy.lab);
       if (lb !== labBusy) { labBusy = lb; syncButtons(); }
+      if (lb && lab && !lab.open && !root.classList.contains("lab")) {   // tasks are running (the page was reloaded): into the lab, rail blocked
+        const ok = !railLab.disabled;
+        if (ok) { enterLab(); return; }
+      }
       if (!enh && c && M.cur === c && now.busy && now.busy.single) {   // the page was reloaded during a run: pick it up again
         const st = await api("/api/enhance/status");
         if (st.name === c.name && st.folder === M.folder && !enh) watchEnhance(c);
