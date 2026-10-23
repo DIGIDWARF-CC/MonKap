@@ -17,7 +17,7 @@
     cur: null,                           // the open picture: {name, iw, ih, bmp, loaded, inherited}
     frame: null, ratio: "1:1", view: new View(), fitMode: true, tile: null,
     dirty: false, busy: false, loadToken: 0, tileSeq: 0, thumbs: new Map(), bitmaps: new Map(),
-    modal: null, lastDelete: null, review: null, raw: [],
+    modal: null, lastDelete: null, review: null, raw: [], mech: null,
   };
   let regen = false;                     // Regenerate (AI) is running
   let enh = null;                        // an Enhance run is open in its window: {c}
@@ -61,42 +61,106 @@
     if (M.folder && M.settings && M.settings.fizgig_dir) {
       try { M.review = await api(url("review")); } catch (e) { M.review = null; }
     }
-    const rv = M.review;
-    const on = !!(rv && rv.available);
-    // Fizgig is set up but gives no verdicts for this folder: say why, instead of showing nothing
-    const note = $q("mkReviewNote"), fz = !!(M.folder && M.settings && M.settings.fizgig_dir);
-    const text = !fz || !rv ? "" : !on ? "Training verdicts: " + rv.reason
-      : rv.run.relocated ? "Verdicts read from this Fizgig's output folder: the run's recorded folder is gone (Fizgig was moved?)."
+    renderNote();
+    renderFilter();
+    $q("mkReview").style.display = M.folder ? "" : "none";
+  }
+
+  // Fizgig is set up but has no run on this folder: a yellow (!) that says why when it is clicked; and the odd cases of a run
+  // that was found after all (Fizgig moved, the pictures moved)
+  function renderNote() {
+    const rv = M.review, on = !!(rv && rv.available), fz = !!(M.folder && M.settings && M.settings.fizgig_dir);
+    $q("mkNoData").style.display = fz && rv && !on ? "" : "none";
+    const note = $q("mkReviewNote");
+    const text = !on ? "" : rv.run.relocated ? "Verdicts read from this Fizgig's output folder: the run's recorded folder is gone (Fizgig was moved?)."
       : rv.run.loose ? "Verdicts from a run on a folder with this name, but at another path (the pictures were moved?)." : "";
     note.textContent = text;
-    note.classList.toggle("warn", !on);
     note.style.display = text ? "" : "none";
-    $q("mkReview").style.display = on ? "" : "none";
-    if (!on) { $q("mkShow").value = "all"; return; }
-    const keep = $q("mkShow").value;
-    const opts = [["all", `All pictures (${M.raw.length || Object.keys(rv.verdicts).length})`],
-      ["problems", `Problems (${["excluded", "stuck", "suspect", "watch"].reduce((a, k) => a + (rv.counts[k] || 0), 0)})`]];
-    for (const l of rv.legend) if (rv.counts[l.key]) opts.push([l.key, `${l.label} (${rv.counts[l.key]})`]);
-    $q("mkShow").replaceChildren(...opts.map(([v, t]) => el("option", {value: v, text: t})));
-    $q("mkShow").value = opts.some(([v]) => v === keep) ? keep : "all";
+  }
+
+  // when the newest training run on this folder started (the trainer read the captions then), or null
+  const runStart = () => (M.review && M.review.available && typeof M.review.run.started_at === "number" ? M.review.run.started_at : null);
+
+  // the "Show" list: one choice at a time, in groups; a choice that needs a training run is greyed out without one
+  function renderFilter() {
+    const sel = $q("mkShow"), keep = sel.value, rows = M.raw || [];
+    const rv = M.review && M.review.available ? M.review : null, t0 = runStart();
+    const n = (f) => rows.filter(f).length;
+    const opt = (v, t, off, tip) => el("option", {value: v, text: t, disabled: !!off, title: tip || ""});
+    const group = (label, opts) => el("optgroup", {label}, opts.map((o) => opt(...o)));
+    const kids = [opt("all", `All pictures (${rows.length})`)];
+    if (rv) {
+      const list = [["problems", `Problems (${PROBLEMS.reduce((a, k) => a + (rv.counts[k] || 0), 0)})`]];
+      for (const l of rv.legend) if (rv.counts[l.key]) list.push([l.key, `${l.label} (${rv.counts[l.key]})`]);
+      kids.push(group("Training verdicts", list));
+    }
+    kids.push(group("Caption", [["cap:none", `No caption (${n((r) => r[2] === "none")})`],
+      ["cap:manual", `Written by hand (${n((r) => r[2] === "manual")})`], ["cap:ai", `Written by AI (${n((r) => r[2] === "ai")})`]]));
+    const need = "Needs a training run on this folder (set the Fizgig folder in the settings)";
+    kids.push(group("Since the last training run", [
+      ["run:changed", `Caption changed (${t0 === null ? 0 : n((r) => r[1] && r[3] > t0)})`, t0 === null, need],
+      ["run:same", `Caption not changed (${t0 === null ? 0 : n((r) => r[1] && r[3] <= t0)})`, t0 === null, need]]));
+    kids.push(group("Picture", [["img:enh", `Enhanced by AI (${n((r) => r[4])})`]]));
+    sel.replaceChildren(...kids);
+    const ok = [...sel.options].some((o) => o.value === keep && !o.disabled);
+    sel.value = ok ? keep : "all";
+    for (const o of $q("mkSort").options) if (o.value === "hard" || o.value === "verdict") { o.disabled = !rv; o.title = rv ? "" : "Needs a training run on this folder"; }
+    if ($q("mkSort").selectedOptions[0] && $q("mkSort").selectedOptions[0].disabled) $q("mkSort").value = "name";
   }
 
   const ORDER = ["excluded", "stuck", "suspect", "watch", "warmup", "exhausted", "learning", "mid", "easy"];
   const PROBLEMS = ["excluded", "stuck", "suspect", "watch"];
 
-  // the list as the review's "Show" and "Sort" ask for it (a picture the run never saw sorts last)
+  // the predicate of the "Show" choice (null: everything)
+  function showFilter() {
+    const v = $q("mkShow").value, rv = M.review && M.review.available ? M.review : null, t0 = runStart();
+    if (v === "all") return null;
+    if (v === "problems") return (r) => !!(rv && rv.verdicts[r[0]] && PROBLEMS.includes(rv.verdicts[r[0]].verdict));
+    if (v.startsWith("cap:")) return (r) => r[2] === v.slice(4);
+    if (v === "run:changed") return (r) => t0 !== null && !!r[1] && r[3] > t0;
+    if (v === "run:same") return (r) => t0 !== null && !!r[1] && r[3] <= t0;
+    if (v === "img:enh") return (r) => !!r[4];
+    return (r) => !!(rv && rv.verdicts[r[0]] && rv.verdicts[r[0]].verdict === v);
+  }
+
+  // the list as "Show" and "Sort" ask for it (a picture with no verdict, or no caption, sorts last)
   function arrange(items) {
     const rv = M.review && M.review.available ? M.review.verdicts : null;
-    if (!rv) return items;
-    const show = $q("mkShow").value, sort = $q("mkSort").value;
-    let out = items.slice();
-    if (show === "problems") out = out.filter((it) => rv[it[0]] && PROBLEMS.includes(rv[it[0]].verdict));
-    else if (show !== "all") out = out.filter((it) => rv[it[0]] && rv[it[0]].verdict === show);
-    const hard = (it) => (rv[it[0]] ? rv[it[0]].recent : -9);
-    const rank = (it) => (rv[it[0]] ? ORDER.indexOf(rv[it[0]].verdict) : 99);
-    if (sort === "hard") out.sort((a, b) => hard(b) - hard(a));
-    else if (sort === "verdict") out.sort((a, b) => rank(a) - rank(b) || hard(b) - hard(a));
+    const pred = showFilter(), sort = $q("mkSort").value;
+    let out = pred ? items.filter(pred) : items.slice();
+    if (sort === "date") out.sort((a, b) => (b[3] || 0) - (a[3] || 0));
+    else if (rv && sort === "hard") out.sort((a, b) => (rv[b[0]] ? rv[b[0]].recent : -9) - (rv[a[0]] ? rv[a[0]].recent : -9));
+    else if (rv && sort === "verdict") {
+      const rank = (it) => (rv[it[0]] ? ORDER.indexOf(rv[it[0]].verdict) : 99);
+      const hard = (it) => (rv[it[0]] ? rv[it[0]].recent : -9);
+      out.sort((a, b) => rank(a) - rank(b) || hard(b) - hard(a));
+    }
     return out;
+  }
+
+  // ---- the icons on a picture: who wrote its caption, and whether the picture was enhanced by AI ---------------------------
+  const IC_DOC = '<svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12h6M9.5 15h6M9.5 18h4"/></svg>';
+  const IC_SPARK = '<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>';
+  const CAP_TIP = {none: "No caption: this picture is left out of training", manual: "Caption written or edited by hand",
+    ai: "Caption written by the model (AI), not touched since"};
+  const IMG_TIP = "Picture enhanced by AI";
+  function icon(kind, klass) {
+    const span = el("span", {class: `ic ${kind} ${klass}`, title: kind === "cap" ? CAP_TIP[klass] : IMG_TIP});
+    span.innerHTML = kind === "cap" ? IC_DOC : IC_SPARK;
+    return span;
+  }
+  // row: [name, has a caption, who wrote it, the caption's change time, enhanced]
+  function pills(row) {
+    const box = el("span", {class: "pills"}, icon("cap", row[2] || (row[1] ? "manual" : "none")));
+    if (row[4]) box.append(icon("img", "enh"));
+    return box;
+  }
+  const when = (sec) => (sec ? new Date(sec * 1000).toLocaleString() : "");
+  function describe(row) {                                       // the lines of the little "i" of a picture
+    const lines = [row[0], CAP_TIP[row[2] || (row[1] ? "manual" : "none")]];
+    if (row[1] && row[3]) lines.push("Caption changed: " + when(row[3]));
+    if (row[4]) lines.push(IMG_TIP);
+    return lines;
   }
 
   function verdictChip(name) {
@@ -118,21 +182,32 @@
 
   function openReviewHelp() {
     if (M.modal) return;
-    const rv = M.review;
-    const run = rv && rv.available ? rv.run : null;
+    const rv = M.review, on = !!(rv && rv.available), run = on ? rv.run : null;
+    const noData = !!(rv && !on && M.settings && M.settings.fizgig_dir);
+    const iconRow = (klass, kind, what) => el("div", {class: "vd-row"}, icon(kind, klass), el("div", {text: what}));
+    const icons = [iconRow("none", "cap", "No caption: the picture is left out of training."),
+      iconRow("manual", "cap", "The caption was written or edited by hand (a caption MonKap has no note of counts as written by hand)."),
+      iconRow("ai", "cap", "The caption was written by the model and has not been touched since."),
+      iconRow("enh", "img", "The picture was enhanced by AI (the AI enhance button).")];
     const rows = (rv ? rv.legend : []).map((l) => el("div", {class: "vd-row"},
       el("span", {class: "vd", text: l.label, style: `background:${l.color}`}),
       el("div", {}, el("div", {text: l.means}), el("div", {class: "field-hint", text: "What to do: " + l.todo}))));
-    const when = run && run.started_at ? new Date(run.started_at * 1000).toLocaleString() : "";
+    const stamp = run && run.started_at ? new Date(run.started_at * 1000).toLocaleString() : "";
     const close = el("button", {class: "btn btn-primary", text: "Close"});
     const {veil, done} = dialog([
-      el("h2", {text: "What the training run found out"}),
-      run ? el("p", {class: "lead", text: `The run "${run.lora}" (${run.family}, ${run.epochs || "?"} epochs${when ? ", " + when : ""}). ` +
-        "Each picture's verdict is Fizgig's loss watch's, from how hard the picture was for the model compared with the others at the same noise level."}) : null,
+      el("h2", {text: noData ? "No training data" : run ? "What the training run found out" : "What the icons mean"}),
+      noData ? el("p", {class: "lead", text: rv.reason}) : null,
+      noData ? el("p", {class: "lead", text: "Without a training run on this folder there are no verdicts, and the filters on whether a caption changed since the last run are greyed out."}) : null,
+      el("h3", {text: "The icons on the pictures", style: "margin:10px 0 4px"}), ...icons,
+      run ? el("h3", {text: "Training verdicts", style: "margin:14px 0 4px"}) : null,
+      run ? el("p", {class: "lead", text: `The run "${run.lora}" (${run.family}, ${run.epochs || "?"} epochs${stamp ? ", " + stamp : ""}). ` +
+        "Each picture's verdict is Fizgig's loss watch's, from how hard the picture was for the model compared with the others at the same noise level. " +
+        "A picture whose caption was changed after the run started has been dealt with: it shows no verdict any more" +
+        (rv.handled ? ` (${rv.handled} so far).` : ".")}) : null,
       ...rows,
       rv && rv.advice && rv.advice.length ? el("h3", {text: "What to try", style: "margin:14px 0 4px"}) : null,
       ...(rv && rv.advice ? rv.advice.map((t) => el("p", {class: "lead", text: "• " + t})) : []),
-      el("div", {class: "field-hint", text: "This reads Fizgig's own files and depends on its version; the setting names are as in Fizgig 8.5."}),
+      rv ? el("div", {class: "field-hint", text: "The verdicts read Fizgig's own files and depend on its version; the setting names are as in Fizgig 8.5."}) : null,
       el("div", {class: "buttons"}, close)]);
     const onKey = (e) => { if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); shut(); } };
     const shut = () => { document.removeEventListener("keydown", onKey, true); done(); };
@@ -169,6 +244,7 @@
     M.trigger = r.trigger || "";
     M.ext = r.ext || M.ext;
     M.raw = r.items;
+    renderFilter();                                              // the counts of the "Show" list come from these rows
     return arrange(r.items);
   }
 
@@ -213,15 +289,15 @@
     for (const [i, node] of [...M.thumbs]) if (i < first || i > last) { node.remove(); M.thumbs.delete(i); }
     for (let i = first; i <= last; i++) {
       if (M.thumbs.has(i)) continue;
-      const [name, has] = M.items[i];
+      const row = M.items[i], name = row[0];
       const info = el("button", {class: "mk-i", type: "button", text: "i", title: "About this picture", onclick: (e) => {
         e.stopPropagation();
-        popover(e.currentTarget, [name, M.items[i][1] ? "Has a caption" : "Empty caption"]);
+        popover(e.currentTarget, describe(M.items[i]));
       }});
       const node = el("div", {class: "mk-th" + (i === M.index ? " cur" : "") + (MS.on && MS.sel.has(name) ? " sel" : ""),
         onclick: (e) => (MS.on ? pickAt(i, e) : go(i - M.index))},
         el("img", {src: url("thumb", {name}), alt: "", draggable: "false"}),
-        el("span", {class: "pill" + (has ? " has" : ""), text: "Empty caption"}), verdictChip(name), info);
+        pills(row), verdictChip(name), info);
       node.style[h ? "left" : "top"] = (i * p + 4) + "px";
       stripIn.append(node);
       M.thumbs.set(i, node);
@@ -241,14 +317,31 @@
     drawStrip();
     markCurrent();
   }
-  function setDot(name, has) {                                   // the "Empty caption" pill of a picture
-    const i = M.items.findIndex((it) => it[0] === name);
-    if (i < 0) return;
-    M.items[i][1] = has ? 1 : 0;
-    const n = M.thumbs.get(i);
-    if (n) n.querySelector(".pill").classList.toggle("has", !!has);
-    const t = MS.tiles.get(name);
-    if (t) t.querySelector(".pill").classList.toggle("has", !!has);
+  // a caption was written, cleared or restored (by the user, the model or a button): the row, its icons, the verdict
+  // st = {has, klass, mtime}; `changed` false when nothing was written
+  function setCap(name, st, changed = true) {
+    const row = (M.raw || []).find((r) => r[0] === name);
+    if (!row) return;
+    row[1] = st.has ? 1 : 0;
+    row[2] = st.klass || (st.has ? "manual" : "none");
+    if (typeof st.mtime === "number") row[3] = st.mtime;
+    const nodes = [M.thumbs.get(M.items.indexOf(row)), MS.tiles.get(name)];
+    for (const n of nodes) if (n) { const old = n.querySelector(".pills"); if (old) old.replaceWith(pills(row)); }
+    if (changed) dropVerdict(name);
+    renderFilter();
+  }
+
+  // the caption changed after the training run read it: the picture is dealt with, and loses its verdict
+  function dropVerdict(name) {
+    const rv = M.review;
+    if (!rv || !rv.available || !rv.verdicts[name]) return;
+    const kind = rv.verdicts[name].verdict;
+    delete rv.verdicts[name];
+    rv.counts[kind] = Math.max(0, (rv.counts[kind] || 0) - 1);
+    rv.handled = (rv.handled || 0) + 1;
+    const i = M.items.findIndex((r) => r[0] === name);
+    for (const n of [M.thumbs.get(i), MS.tiles.get(name)]) if (n) for (const chip of n.querySelectorAll(".vd")) chip.remove();
+    if (M.cur && M.cur.name === name) showVerdict(name);
   }
 
   // ---- small pop-ups --------------------------------------------------------------------------------------------
@@ -378,8 +471,8 @@
     $q("mkEnhance").disabled = !c || gal || regen || !!enh || run;
     $q("mkEnhHintBtn").disabled = $q("mkEnhance").disabled;
     $q("mkEnhance").title = gal ? "One picture at a time: open it (double click), then enhance it" : ENHANCE_TITLE;
-    $q("mkRegen").querySelector(".lbl").textContent = gal ? `Regenerate captions (${n})` : "Regenerate (AI)";
-    $q("mkRegen").title = gal ? `Write the captions of the ${plural(n, "picked picture")} again, one after another` : REGEN_TITLE;
+    $q("mkRegen").querySelector(".lbl").textContent = gal ? `AI ReCaption (${n})` : "AI ReCaption";
+    $q("mkRegen").title = gal ? `Write the captions of the ${plural(n, "picked picture")} again, one after another: the old texts are replaced (kept, and Undo brings them back)` : REGEN_TITLE;
     $q("mkDelete").querySelector(".lbl").textContent = gal ? `Delete selected (${n})` : "Delete…";
     $q("mkDelete").title = gal ? `Delete the ${plural(n, "picked picture")} (asks every time)` : DELETE_TITLE;
     $q("mkShow").disabled = $q("mkSort").disabled = run;       // the picked set holds still while captions are written
@@ -410,6 +503,7 @@
     if (next === text.value.trim()) return;
     text.value = next;
     M.dirty = true;
+    M.mech = next;                                               // a change by a button: the model's caption stays the model's
     $q("mkBadge").style.display = "none";
     autosave(); triggerState();
     text.focus({preventScroll: true});
@@ -669,10 +763,11 @@
     const c = M.cur;
     if (!c || !M.dirty) return;
     const sent = text.value;
-    const r = await api("/api/caption", {folder: M.folder, name: c.name, text: sent, loaded: c.loaded, ext: capExtNow()});
+    const mech = M.mech !== null && sent.trim() === M.mech;      // the text the trigger word button made, not typed on after it
+    const r = await api("/api/caption", {folder: M.folder, name: c.name, text: sent, loaded: c.loaded, ext: capExtNow(), mechanical: mech});
     c.loaded = sent.trim() || null;
-    if (text.value === sent) M.dirty = false;                     // typed on meanwhile: the next save takes it
-    setDot(c.name, r.has_caption);
+    if (text.value === sent) { M.dirty = false; M.mech = null; }  // typed on meanwhile: the next save takes it
+    setCap(c.name, {has: r.has_caption, klass: r.class, mtime: r.mtime}, r.kind === "written" || r.kind === "cleared");
     if (r.conflict) status(`Saved. The caption file had changed on disk: the other text is kept in ${r.backup}`, "warn");
     else if (r.kind === "cleared") status(`Caption removed${r.backup ? ` (the old text is kept in ${r.backup})` : ""}: the picture is left out of training until it has one.`, "warn");
     else if (r.kind === "written") status("Caption saved.", "ok");
@@ -721,15 +816,20 @@
       await flush();                                             // what is typed is on disk first, so nothing is lost
       status("Writing the caption…");
       const r = await api("/api/recaption", {folder: M.folder, name: c.name, hint});
+      setCap(c.name, {has: true, klass: r.class, mtime: r.mtime});
       if (M.cur !== c) { status(`${c.name}: new caption written.`, "ok"); return; }     // the user moved on meanwhile
       text.value = r.caption; c.loaded = r.caption; M.dirty = false;
-      setDot(c.name, true);
       triggerState();
-      status("New caption written.", "ok", prev.trim() && prev.trim() !== r.caption ? {label: "Restore previous caption", run: () => {
-        text.value = prev; M.dirty = true; $q("mkBadge").style.display = "none"; triggerState();
-        flush().then(() => status("The previous caption is back.", "ok")).catch((e) => status(e.message, "err"));
+      status("New caption written.", "ok", prev.trim() && prev.trim() !== r.caption ? {label: "Restore previous caption", run: async () => {
+        try {
+          const back = await api("/api/caption", {folder: M.folder, name: c.name, text: prev, loaded: r.caption, ext: capExtNow(),
+            restore: r.note_before || null});
+          if (M.cur === c) { text.value = prev; c.loaded = prev.trim() || null; M.dirty = false; $q("mkBadge").style.display = "none"; triggerState(); }
+          setCap(c.name, {has: back.has_caption, klass: back.class, mtime: back.mtime});
+          status("The previous caption is back.", "ok");
+        } catch (e) { status(e.message, "err"); }
       }} : null);
-    } catch (e) { if (M.cur === c) status(`Could not regenerate: ${e.message}`, "err"); }
+    } catch (e) { if (M.cur === c) status(`Could not ReCaption: ${e.message}`, "err"); }
     finally { regen = false; syncButtons(); }
   }
 
@@ -758,11 +858,25 @@
       ? "e.g. only sharpen the face, keep the background soft"
       : "e.g. a close-up from the rear, the intake manifold is off"});
     box.value = hints.get(key) || "";
-    const go = el("button", {type: "button", class: "btn btn-primary btn-sm", text: enhancing ? "Enhance with these words" : gal ? "Regenerate them with hint" : "Regenerate with hint"});
+    const go = el("button", {type: "button", class: "btn btn-primary btn-sm", text: enhancing ? "Enhance with these words" : gal ? "ReCaption them with hint" : "ReCaption with hint"});
+    // unload: an unloaded model is not an error, so the button is always there (when the feature is set up)
+    const said = el("span", {class: "field-hint"});
+    const unload = el("button", {type: "button", class: "btn btn-sm", title: enhancing
+      ? "Ask ComfyUI to unload its models and free the video memory (for a trainer)" : "Unload the caption model from LM Studio (the other models there are left alone)",
+      text: enhancing ? "Unload the models from ComfyUI" : "Unload the model from LM Studio"});
+    unload.addEventListener("click", async () => {
+      unload.disabled = true; said.textContent = "Asking…";
+      try {
+        if (enhancing) { await api("/api/enhance/free", {}); said.textContent = "ComfyUI was asked to free its models."; }
+        else { const r = await api("/api/ai/unload", {}); said.textContent = r.unloaded ? "Unloaded." : "It was not loaded."; }
+      } catch (e) { said.textContent = e.message; }
+      finally { unload.disabled = false; }
+    });
     hintPanel = el("div", {class: "mk-hint", role: "dialog", "aria-label": enhancing ? "Your words for the enhance" : "A hint for the model"},
       el("button", {type: "button", class: "x", text: "×", title: "Close", onclick: () => { closeHint(); focusHome(); }}),
       el("h4", {text: enhancing ? "Your words for the enhance" : gal ? `A hint for the ${plural(selectedNames().length, "picked picture")}` : "A hint for the model"}), box,
-      el("div", {class: "bar"}, el("span", {class: "field-hint", text: (enhancing ? "Added to the template's prompt." : "Sent with the task.") + " Ctrl+Enter to go."}), go));
+      el("div", {class: "bar"}, el("span", {class: "field-hint", text: (enhancing ? "Added to the template's prompt." : "Sent with the task.") + " Ctrl+Enter to go."}), go),
+      el("div", {class: "bar unload"}, unload, said));
     hintAnchor = anchor;
     document.body.append(hintPanel);
     const r = anchor.getBoundingClientRect(), w = hintPanel.offsetWidth, h = hintPanel.offsetHeight;
@@ -924,27 +1038,25 @@
   const inGallery = () => MS.on && !MS.canvas;
   const gallery = $q("mkGallery");
 
-  function makeTile(name, has) {
+  function makeTile(row) {
+    const name = row[0];
     const open = el("button", {type: "button", title: "Open this picture (double click)", "aria-label": "Open this picture", text: "⤢",
       onclick: (e) => { e.stopPropagation(); expand(name); }});
     const drop = el("button", {type: "button", title: "Take it out of the selection", "aria-label": "Take it out of the selection", text: "×",
       onclick: (e) => { e.stopPropagation(); setPicked(name, false); }});
     const node = el("div", {class: "mk-tile", "data-name": name, title: name},
       el("img", {src: url("thumb", {name}), alt: "", loading: "lazy", draggable: "false"}),
-      verdictChip(name), el("span", {class: "pill" + (has ? " has" : ""), text: "Empty caption"}),
-      el("span", {class: "state"}), el("div", {class: "tools"}, open, drop));
+      verdictChip(name), pills(row), el("span", {class: "state", text: "!"}), el("div", {class: "tools"}, open, drop));
     node.addEventListener("click", () => focusTile(name));
     node.addEventListener("dblclick", () => expand(name));
     return node;
   }
 
-  const STATE_LABEL = {done: "Caption updated", failed: "Failed"};
   function paintTile(name) {
     const n = MS.tiles.get(name);
     if (!n) return;
     const st = MS.status.get(name) || "";
     for (const k of ["queued", "working", "done", "failed"]) n.classList.toggle(k, k === st);
-    n.querySelector(".state").textContent = STATE_LABEL[st] || "";
     n.title = st === "failed" ? `${name}: ${MS.errors.get(name) || "failed"}` : name;
     for (const b of n.querySelectorAll(".tools button")) b.disabled = !!MS.run && b.textContent === "×";
   }
@@ -957,11 +1069,12 @@
   }
 
   function syncGallery() {
-    const names = selectedNames(), want = new Set(names), has = new Map(M.items.map((it) => [it[0], it[1]]));
+    const names = selectedNames(), want = new Set(names), byName = new Map(M.items.map((it) => [it[0], it]));
     for (const [n, node] of MS.tiles) if (!want.has(n)) { node.remove(); MS.tiles.delete(n); }
     const nodes = names.map((n) => {
       let node = MS.tiles.get(n);
-      if (!node) { node = makeTile(n, has.get(n)); MS.tiles.set(n, node); paintTile(n); }
+      if (!node) { node = makeTile(byName.get(n)); MS.tiles.set(n, node); paintTile(n); }
+      else { const old = node.querySelector(".pills"); if (old) old.replaceWith(pills(byName.get(n))); }    // the list may have been read again
       return node;
     });
     if (nodes.length) gallery.replaceChildren(...nodes);
@@ -1115,9 +1228,9 @@
           if (!info.caption) { skipped++; continue; }
           const next = G.withTrigger(info.caption, M.trigger);
           if (next === info.caption.trim()) continue;
-          await api("/api/caption", {folder: M.folder, name, text: next, loaded: info.caption, ext: capExtNow()});
+          const saved = await api("/api/caption", {folder: M.folder, name, text: next, loaded: info.caption, ext: capExtNow(), mechanical: true});
           changed++;
-          setDot(name, true);
+          setCap(name, {has: true, klass: saved.class, mtime: saved.mtime});
           if (M.cur && M.cur.name === name) { text.value = next; M.cur.loaded = next; M.dirty = false; }
         } catch (e) { failed++; }
       }
@@ -1136,7 +1249,7 @@
     try { await flush(); } catch (e) { status(e.message, "err"); return; }
     MS.status = new Map(names.map((n) => [n, "queued"]));
     MS.errors = new Map();
-    MS.undo = {before: new Map(), after: new Map()};
+    MS.undo = {before: new Map(), after: new Map(), notes: new Map()};
     MS.note = "";
     const run = MS.run = {names, stop: false, done: 0, failed: 0, streak: 0, t0: performance.now()};
     for (const n of names) paintTile(n);
@@ -1149,8 +1262,8 @@
       try {
         const r = await api("/api/recaption", {folder: M.folder, name, hint});
         MS.status.set(name, "done"); run.done++; run.streak = 0;
-        MS.undo.before.set(name, r.before); MS.undo.after.set(name, r.caption);
-        setDot(name, true);
+        MS.undo.before.set(name, r.before); MS.undo.after.set(name, r.caption); MS.undo.notes.set(name, r.note_before || null);
+        setCap(name, {has: true, klass: r.class, mtime: r.mtime});
         const c = M.cur;
         if (c && c.name === name) { text.value = r.caption; c.loaded = r.caption; M.dirty = false; triggerState(); }
       } catch (e) {
@@ -1177,9 +1290,9 @@
       for (const [name, after] of u.after) {
         const before = u.before.get(name) || "";
         try {
-          await api("/api/caption", {folder: M.folder, name, text: before, loaded: after, ext: capExtNow()});
+          const rr = await api("/api/caption", {folder: M.folder, name, text: before, loaded: after, ext: capExtNow(), restore: u.notes.get(name) || null});
           back++;
-          MS.status.delete(name); paintTile(name); setDot(name, !!before);
+          MS.status.delete(name); paintTile(name); setCap(name, {has: rr.has_caption, klass: rr.class, mtime: rr.mtime});
           if (M.cur && M.cur.name === name) { text.value = before; M.cur.loaded = before || null; M.dirty = false; triggerState(); }
         } catch (e) { failed++; }
       }
@@ -1368,7 +1481,7 @@
       recent.length ? el("div", {class: "mk-recent"}, el("div", {class: "field-hint", text: "Opened lately:"}),
         recent.map((p) => el("button", {type: "button", class: "mk-dir", text: p, onclick: () => { path.value = p; browse(p); }}))) : null,
       el("div", {class: "row"}, el("label", {class: "k", text: "Trigger word:"}), trig),
-      el("div", {class: "field-hint", text: "Optional. Put first in the captions MonKap writes for this folder (a Kapture can copy it, Regenerate adds it)."}),
+      el("div", {class: "field-hint", text: "Optional. Put first in the captions MonKap writes for this folder (a Kapture can copy it, AI ReCaption adds it)."}),
       err, el("div", {class: "buttons"}, cancel, go)];
     const {veil, done} = dialog(content);
     const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
@@ -1627,6 +1740,65 @@
         el("button", {type: "button", class: "btn btn-sm", text: "Free ComfyUI's memory", title: "Unload its models, so a trainer has the video memory", onclick: freeComfy})),
       el("div", {class: "mk-warn", text: "Your own template: download the reference, open it in ComfyUI (drag the file into the window) and change what you like between the four nodes titled \"MonKap Image\", \"MonKap Prompt\", \"MonKap Seed\" and \"MonKap Result\". Those four are how MonKap talks to the workflow: keep them, and keep them linked. Then Save (API Format) and put the file's path above. Finish the workflow with a preview node, so nothing is written to ComfyUI's output folder."})];
 
+    // -- the open folder's housekeeping: every action counts first and always asks (the asking cannot be switched off)
+    const mOut = el("div", {class: "field-hint", style: "margin-top:8px"});
+    const mUndo = el("button", {type: "button", class: "btn btn-sm", style: "display:none", text: "Undo clearing"});
+    let cleared = null;
+    const bulkReload = async () => {                                // the list, the icons and the open picture's caption, again
+      await loadReview().catch(() => {});
+      await refreshList().catch(() => {});
+      if (M.cur) { const i = M.items.findIndex((it) => it[0] === M.cur.name); M.cur = null; M.dirty = false; if (i >= 0) await open(i); }
+    };
+    const mAct = async (action, ask, said) => {
+      mOut.textContent = "";
+      mUndo.style.display = "none";
+      if (!M.folder) { mOut.textContent = "Open a folder first."; return; }
+      if (MS.run) { mOut.textContent = "Wait for the running ReCaption, or stop it."; return; }
+      let dry;
+      try { dry = await api("/api/maintenance", {folder: M.folder, action, dry: true}); } catch (e) { mOut.textContent = e.message; return; }
+      if (!dry.count) { mOut.textContent = said.none; return; }
+      const a = ask(dry);
+      if (!(await confirmDialog(a.title, el("div", {}, el("p", {class: "lead", text: a.body}),
+        el("div", {class: "quote", text: M.folder})), a.yes, false))) return;
+      try {
+        const r = await api("/api/maintenance", {folder: M.folder, action});
+        mOut.textContent = said.done(r);
+        if (action === "clear_captions") { cleared = r.items; mUndo.style.display = ""; }
+        await bulkReload();
+      } catch (e) { mOut.textContent = e.message; }
+    };
+    mUndo.addEventListener("click", async () => {
+      if (!cleared) return;
+      try {
+        const r = await api("/api/maintenance", {folder: M.folder, action: "restore_captions", items: cleared});
+        cleared = null; mUndo.style.display = "none";
+        mOut.textContent = `${plural(r.count, "caption")} back.`;
+        await bulkReload();
+      } catch (e) { mOut.textContent = e.message; }
+    });
+    const mMB = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
+    const mRow = (label, what, run) => el("div", {class: "row", style: "align-items:flex-start"},
+      el("button", {type: "button", class: "btn btn-sm", style: "flex:0 0 230px", text: label, onclick: run}), el("div", {class: "field-hint", style: "flex:1 1 200px", text: what}));
+    const maintaining = [
+      hint("Housekeeping of the folder that is open now. Each button counts what it would do and asks before it does it."),
+      mRow("Clear all captions…", "Removes the caption file of every picture. Each text is kept in .monkap/backups, and Undo (right after) puts them back.",
+        () => mAct("clear_captions", (d) => ({title: `Clear ${plural(d.count, "caption")}?`, yes: `Clear ${d.count}`,
+          body: `The caption file of ${plural(d.count, "picture")} is removed; the pictures stay and are left out of training until they have captions again. Each text is kept in .monkap/backups, and Undo restores them.`}),
+          {none: "No caption files in this folder.", done: (r) => `${plural(r.count, "caption")} cleared (their texts are in .monkap/backups).${r.failed && r.failed.length ? ` ${r.failed.length} could not be cleared.` : ""}`})),
+      mRow("Delete empty caption files…", "Caption files with nothing in them: a trainer takes such a picture as captioned with an empty caption.",
+        () => mAct("empty_captions", (d) => ({title: `Delete ${plural(d.count, "empty caption file")}?`, yes: `Delete ${d.count}`,
+          body: `${plural(d.count, "caption file")} with no text in this folder are deleted.`}),
+          {none: "No empty caption files.", done: (r) => `${plural(r.count, "empty caption file")} deleted.`})),
+      mRow("Empty the removed/ folder…", "Erases for good the pictures that the soft delete moved to removed/ (no Undo after this).",
+        () => mAct("empty_removed", (d) => ({title: "Erase removed/ for good?", yes: "Erase for good",
+          body: `${plural(d.count, "file")} (${mMB(d.bytes || 0)}) in removed/ are erased. This cannot be undone.`}),
+          {none: "removed/ is empty or not there.", done: (r) => `${plural(r.count, "file")} erased (${mMB(r.bytes || 0)}).`})),
+      mRow("Forget MonKap's notes…", "Crop names MonKap has given, where each crop came from, and who wrote each caption. The caption backups and the replaced originals stay.",
+        () => mAct("clear_notes", (d) => ({title: "Forget MonKap's notes about this folder?", yes: "Forget the notes",
+          body: `${plural(d.count, "notes file")} in .monkap are deleted: the next crop may take a name that was used before, and every caption counts as written by hand again.`}),
+          {none: "MonKap has no notes about this folder.", done: (r) => `${plural(r.count, "notes file")} deleted.`})),
+      el("div", {class: "row"}, mUndo), mOut];
+
     // -- what MonKap keeps
     const dataNote = el("div", {class: "field-hint"});
     async function showData() {
@@ -1652,7 +1824,7 @@
 
     // -- the tabs
     const tabs = [["general", "General", general], ["captions", "Captions", captioning], ["deleting", "Deleting", deleting],
-      ["enhance", "Enhance", enhancing], ["fizgig", "Fizgig", fizgig], ["data", "Data", data]];
+      ["enhance", "Enhance", enhancing], ["fizgig", "Fizgig", fizgig], ["maintenance", "Current dataset maintenance", maintaining], ["data", "Data", data]];
     const panes = tabs.map(([key, , nodes]) => el("div", {class: "mk-pane", "data-pane": key, style: "display:none"}, nodes));
     const bar = el("div", {class: "mk-tabs", role: "tablist"});
     const show = (key) => {
@@ -1701,14 +1873,6 @@
     if (!active() || M.modal) return;
     const typing = e.target instanceof Element && e.target.closest("textarea, input:not([type=range]), select, [contenteditable]");
     const mod = e.ctrlKey || e.altKey || e.metaKey;
-    const plain = e.target === document.body || e.target === gallery || e.target === stage;
-    if (MS.on && !typing && (e.ctrlKey || e.metaKey) && e.code === "KeyA") { e.preventDefault(); pickAll(); return; }
-    if (MS.on && !typing && !mod && e.code === "Space" && plain) {
-      e.preventDefault();
-      if (!e.repeat && M.cur) setPicked(M.cur.name, !MS.sel.has(M.cur.name));
-      return;
-    }
-    if (inGallery() && !typing && !mod && e.key === "Enter" && plain && M.cur) { e.preventDefault(); expand(M.cur.name); return; }
     if (e.code === "KeyC" && !mod && !e.shiftKey && !typing) {   // by the physical key: any layout, any NumLock
       e.preventDefault();
       if (!e.repeat && !inGallery()) kapture();                  // a held key is ONE crop
@@ -1720,9 +1884,9 @@
       if (!e.repeat) go(e.key === "PageUp" ? -1 : 1);
     } else if (e.key === "Delete" && e.shiftKey && !mod) {
       const sel = e.target === text && text.selectionStart !== text.selectionEnd;
-      if (sel) return;                                           // Shift+Delete is Cut when text is selected
+      if (sel || inGallery()) return;                            // Shift+Delete is Cut when text is selected; in the gallery deleting is the button
       e.preventDefault();
-      if (!e.repeat) { if (inGallery()) requestDeleteMany(); else requestDelete(); }     // a held key is ONE delete
+      if (!e.repeat) requestDelete();                            // a held key is ONE picture
     } else if (e.key.startsWith("Arrow") && !typing && M.frame && e.target === stage) {
       e.preventDefault();
       nudge(e.key, e.shiftKey, e.ctrlKey);
@@ -1768,6 +1932,7 @@
   $q("mkShow").addEventListener("change", rearrange);
   $q("mkSort").addEventListener("change", rearrange);
   $q("mkLegend").addEventListener("click", (e) => { e.preventDefault(); openReviewHelp(); });
+  $q("mkNoData").addEventListener("click", openReviewHelp);
   strip.addEventListener("scroll", drawStripSoon);
   strip.addEventListener("wheel", (e) => {                        // in a row the wheel scrolls sideways
     if (horizontal()) { e.preventDefault(); strip.scrollLeft += e.deltaY + e.deltaX; }
@@ -1788,7 +1953,7 @@
       [key("PgUp"), "previous picture"],
       [key("PgDn"), "next picture"],
       [key("⇧", "Del"), "delete this picture (the caption box keeps Cut when text is selected)"],
-      [txt("Enter selection mode"), "pick pictures in the strip (Shift+click a range; Ctrl+A, Space and Enter work outside the caption box) to write their captions again, add the trigger word or delete them together; deleting always asks. The pick is remembered for each folder until the page is closed"]];
+      [txt("Enter selection mode"), "pick pictures in the strip (Shift+click a range) to ReCaption them with the model, add the trigger word or delete them together; deleting always asks. The gallery is for the mouse; PgUp and PgDn walk the picked pictures. The pick is remembered for each folder until the page is closed"]];
     const list = el("dl", {class: "mk-keys"});
     for (const [k, what] of rows) list.append(el("dt", {}, k), el("dd", {text: what}));
     const close = el("button", {class: "btn btn-primary", text: "Close"});
@@ -1844,7 +2009,7 @@
       if (now.folder !== was.folder || now.ext !== was.ext) await refreshList();
       if (c && M.cur === c && !M.dirty && now.name === c.name && now.caption !== c.loaded) {   // rewritten behind the page's back
         c.loaded = now.caption; text.value = now.caption || ""; $q("mkBadge").style.display = "none";
-        setDot(c.name, !!now.caption); triggerState();
+        setCap(c.name, {has: !!now.caption, klass: now.class, mtime: now.mtime}); triggerState();
         status("This caption was changed on disk (by Fizgig or another program): the new text is shown.", "warn");
       }
     } catch (e) { /* the server is busy or gone: the next question tries again */ }

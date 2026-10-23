@@ -7,4 +7,4 @@ and frame a part of a picture to save as a new picture (Kapture).
   dataset  - listing a folder, thumbnails, previews and tiles, remove and undo
   server   - the local web server and its routes (the page is in static/)
 """
-__version__ = "0.3.2"
+__version__ = "0.4.0"

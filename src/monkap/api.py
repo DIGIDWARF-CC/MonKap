@@ -302,15 +302,16 @@ def live(folder: str, name: str = "") -> dict:
         folder_stamp = f"{st.st_mtime_ns}"
     except OSError:
         folder_stamp = ""
-    caption = None
+    caption, state = None, {}
     if name:
         try:
             _f, path = dataset.locate(folder, name)
             caption = captions.read_caption(path, ext)
+            state = _caption_state(folder, path, name, ext)
         except (NotFound, ValueError, OSError):
             caption = None
     return {"folder": folder_stamp, "review": fizgig_review.stamp(s.fizgig_dir, folder) if s.fizgig_dir else "",
-            "ext": ext, "trigger": folder_trigger(folder), "caption": caption, "name": name}
+            "ext": ext, "trigger": folder_trigger(folder), "caption": caption, "name": name, **state}
 
 
 # ------------------------------------------------------------------------------------------------ enhance

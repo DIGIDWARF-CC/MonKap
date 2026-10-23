@@ -305,3 +305,27 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 .mk.gal #mkEnhSplit { display: none; }
 @container mkmain (max-width: 820px) { .mk.gal .mk-actions .lbl { display: none; } .mk.gal .mk-actions .btn { padding-left: 10px; padding-right: 10px; } }
 .mk-actions .btn { min-width: 0; }
+
+/* 0.4.0: the icons on a picture (who wrote the caption, enhanced by AI), the (!) of "no training data", the batch marks */
+.pills { position: absolute; left: 4px; bottom: 4px; display: flex; gap: 3px; pointer-events: auto; }
+.ic { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%;
+  background: rgba(16, 21, 27, .92); border: 1px solid currentColor; cursor: default; }
+.ic svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ic.none { color: var(--warning); }
+.ic.manual { color: var(--success); }
+.ic.ai, .ic.enh { color: var(--accent-hover); }
+.vd-row .ic { flex: 0 0 auto; width: 24px; height: 24px; margin-right: 10px; }
+.vd-row .ic svg { width: 15px; height: 15px; }
+.mk-th .pills, .mk-tile .pills { z-index: 2; }
+.mk-nodata { display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 6px; padding: 2px 9px 2px 3px; border-radius: 999px;
+  border: 1px solid rgba(245, 158, 11, .6); background: rgba(60, 40, 8, .6); color: var(--warning); font: 600 12px var(--font-family); cursor: pointer; }
+.mk-nodata:hover { background: rgba(80, 54, 10, .8); }
+.mk-nodata .bang { width: 18px; height: 18px; border-radius: 50%; background: var(--warning); color: #1a1205; font: 800 12px/18px var(--font-family); text-align: center; }
+/* the batch: a failed picture gets a red mark; a done one is simply no longer dimmed (its caption icon turned blue) */
+.mk-tile .state { right: 5px; bottom: 5px; width: 20px; height: 20px; padding: 0; text-align: center; border-radius: 50%;
+  font: 800 12px/20px var(--font-family); background: rgba(70, 20, 20, .96); color: var(--danger); border: 1px solid var(--danger); }
+.mk-tile.failed .state { display: block; }
+.mk-tile.done .state { display: none; }
+.mk-th .pill, .mk-tile .pill { display: none; }
+.mk-hint .bar.unload { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.mk-dialog .quote { word-break: break-all; }
