@@ -1,51 +1,105 @@
 # MonKap
 
-A workbench for preparing image datasets: frame and crop pictures, write and edit captions by hand or with a model, and review the whole set from the keyboard.
+**Prepare image datasets for LoRA and fine-tune training: crop, caption, enhance and review every picture, mostly from the keyboard.**
 
-Pictures are never resized behind your back, and nothing is erased without a way back unless you ask for it.
+[![Release](https://img.shields.io/github/v/release/DIGIDWARF-CC/MonKap)](https://github.com/DIGIDWARF-CC/MonKap/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/github/license/DIGIDWARF-CC/MonKap)](LICENSE)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
+![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)
+
+[**Download for Windows**](https://github.com/DIGIDWARF-CC/MonKap/releases/latest) · [Run from source](#run-from-source) · [Works with Fizgig](#fizgig)
 
 ![MonKap: a folder of pictures, the caption under the picture, training labels on the thumbnails](docs/screenshots/01-overview.jpg)
 
+Pictures are never resized behind your back, and nothing is erased without a way back unless you ask for it.
+
 ## What it does
 
-- **Kapture.** Drag a frame on a picture (ratio presets, the size shown in pixels), press `C`, and the framed area is saved next to the original as a new PNG, at the original's own pixels. The frame stays, so a four-panel page is four key presses. New pictures get names from a template (`{parent}_crop_{n:03d}`), and a number is never used twice, even after a crop is deleted.
-- **Captions.** The keyboard starts in the caption box; it saves by itself, and `PgUp` / `PgDn` walk through the folder. Clearing a caption on purpose removes the file (the old text is backed up first). A folder can have a trigger word, which MonKap can put first in a caption with one button.
-- **AI ReCaption.** The brain button writes the caption again, from scratch, with a model served by LM Studio, or by any server with an OpenAI-style API (Ollama, llama.cpp, vLLM…): the old text is replaced (it is kept, and *Restore previous caption* brings it back). Pick the model and the task in the settings; each task's instruction is editable. The arrow next to the button takes a hint for the model and has *Unload the model from LM Studio* (the model you picked only; unloading one that isn't loaded is no error).
-- **AI enhance.** The sparkle button hands the picture to a ComfyUI that is already running (MonKap never starts one). The progress is drawn over the picture itself (blurred and darkened, then ComfyUI's own preview frames), with one **Stop** button in place of the usual ones. The result comes as an interactive comparison: the original on the left, the enhanced picture on the right, a divider you drag. Then: **Retry** (another seed), **Discard**, **Replace** (the original is kept in `.monkap/replaced/`, and Undo brings it back) or **Store as Kapture** (a new picture next to the original, named and captioned like a crop). While it runs, the other pictures, the selection mode and the filters wait, and every greyed button says why in its tooltip. The arrow next to the button takes your own words for the picture and has *Unload the models from ComfyUI*. See [Enhance](#enhance-with-comfyui) below.
-- **Enhance lab.** The second icon of the rail on the left. A gallery of every picture of the folder with what helps to choose (size in pixels, a rough sharpness estimate with a *blurriest first* order, which task a picture is in, failed or waiting, the training verdict, AI-enhanced). Pick pictures (click, Shift+click, `Ctrl+A`), make a **task** from them with an optional extra instruction for the enhancer (the tick *Completely override default prompt* makes that instruction the whole prompt, without the template's default words in front; such a task wears an *overridden enhancer defaults* pill), and **Start** it: ComfyUI works through the pictures one at a time, with a progress bar and the time left. A finished picture leaves its task for good and gets a big yellow mark; a click opens it next to its original, and you choose **Regenerate**, **Discard**, **Save as new**, **Replace** or **Delete as unfixable**, then land on the next one that waits (`PgUp` / `PgDn` walk them). Three failures in a row, or a ComfyUI that goes away, stop the task. The tasks and the waiting results are kept on disk, so they survive a restart; a task that was running comes back *stopped*, never started by itself. The lab and the main view never use ComfyUI at the same time, and you can't leave the lab while tasks run.
-- **Who wrote a caption, and what changed.** Small round icons on every picture, in the filmstrip and in the gallery: a page with text (yellow: no caption, green: written or edited by hand, blue: written by the model and not touched since) and, when the picture was enhanced by AI, sparkles. The *Show* list filters by them (No caption, Written by hand, Written by AI, Enhanced by AI), sorts by when the caption changed, and, when a Fizgig run has trained on the folder, by whether a caption changed since that run started. MonKap keeps these notes in the folder's `.monkap/pictures.json`; a caption it has no note of counts as written by hand, and so does any text you have changed.
-- **Selection mode.** *Enter selection mode* above the filmstrip: a click on a picture picks it (Shift+click a range; icons for all, none and invert; they act on what the list shows, so a filter never hides a picked picture). The picture area becomes a gallery of the picked ones: click a tile to edit its caption below, double-click (or the arrow on the tile) to open it as a picture, and *Back to selection gallery* returns. The gallery is for the mouse; the keyboard stays with the caption box (`PgUp` / `PgDn` walk the picked pictures). **AI ReCaption** (with a hint for all of them) writes the captions one after another: each tile shows a spinner, then its icon turns blue (a red mark if it failed), with *Stop processing* and *Undo captions* above; **Trigger word** puts the folder's word first in every picked caption; **Delete selected** removes them together and always asks, whatever the settings say about asking (one Undo for the whole pack in the soft mode). The pick is remembered for each folder while the page is open: leave the mode and come back, or open another folder and return, and it is there (names that left the folder are dropped; *Select none* clears it).
-- **Big folders and big pictures.** A virtual filmstrip (a 4000-picture folder opens in a fraction of a second), a whole-picture preview, and full-resolution tiles when you zoom in. Pinch-zoom works on touch.
-- **Delete.** Either move to the folder's `removed/` with Undo, or erase for good. Your choice in the settings.
-- **Current dataset maintenance.** A tab of the settings with housekeeping of the folder that is open: *Clear all captions* (each text is kept in `.monkap/backups`, and Undo brings them back), *Delete empty caption files*, *Empty the removed/ folder* and *Forget MonKap's notes*. Every button counts what it would do and always asks first; the asking cannot be switched off.
+- **Crop** a part of a picture into a new picture (Kapture), at the original's own pixels.
+- **Caption** by hand with autosave, or with a vision model: LM Studio or any OpenAI-compatible server.
+- **Enhance** a picture with your own ComfyUI, and compare before and after on a draggable divider.
+- **Enhance a whole folder** in the Enhance lab: pick pictures, make a task, decide about each result.
+- **Review training** when you train with [Fizgig](#fizgig): which pictures are stuck, and what to do about them.
+- **Stay in control**: Undo for deletes, replaced originals and cleared captions; big folders open fast.
+
+## Crop: Kapture
+
+Drag a frame (ratio presets, size shown in pixels), press `C`, and the framed area is saved next to the original as a new PNG. The frame stays, so a four-panel page is four key presses. New pictures are named from a template (`{parent}_crop_{n:03d}`), and a number is never used twice.
 
 ![Kapture: a 1:1 frame on the picture; C saves it as a new picture](docs/screenshots/02-kapture.jpg)
 
-The layout follows the window: in a narrow window (or on a touch screen) the picture goes first and the buttons become one row at the bottom.
+## Caption
 
-<img src="docs/screenshots/06-phone.jpg" alt="The narrow layout" width="260">
-
-## Install (Windows 10 and 11)
-
-Run `MonKap-<version>-setup.exe`. It installs for your user (no administrator rights) and adds a Start menu entry.
-
-MonKap shows its page in the system's **WebView2** runtime. Windows 11 has it. On Windows 10 it usually comes with Microsoft Edge, but an old Windows 10 may only have the older web view: if the window doesn't open, install the Evergreen runtime from <https://developer.microsoft.com/microsoft-edge/webview2/>. Or use the Start menu entry **MonKap (in the browser)**, which opens the same page in your default browser instead of a window.
-
-For captions with a model, start LM Studio's server (or any compatible one), and in MonKap's settings set the address (`http://localhost:1234` is the default), press Refresh, and choose a model that can see pictures. The pictures are sent to that address, so use one you trust.
+- The keyboard starts in the caption box. It saves by itself, and `PgUp` / `PgDn` walk through the folder.
+- A **trigger word** per folder goes first in a caption with one button.
+- **AI ReCaption** writes the caption again from scratch. The old text is kept, and *Restore previous caption* brings it back. The arrow next to the button takes a hint for the model.
+- Small icons show who wrote each caption (nobody, you, or the model), and the *Show* list filters by them.
+- **Selection mode** does the same for many pictures at once: ReCaption, trigger word, delete, with one Undo.
 
 ## Enhance with ComfyUI
 
-Optional. In the settings, the Enhance tab takes the address of your ComfyUI (`http://127.0.0.1:8188` by default) and a template. **Check** tells you, before anything is sent, whether the template is usable and whether that ComfyUI has the nodes and model files it asks for. **Free ComfyUI's memory** unloads its models, for when a trainer needs the video memory.
+The sparkle button hands the picture to a ComfyUI that is already running (MonKap never starts one). The progress is drawn on the picture itself. The result comes as a comparison with a draggable divider, then you choose: **Retry** (new seed), **Discard**, **Replace** (the original is kept, Undo brings it back) or **Store as Kapture**.
 
-The template is a ComfyUI workflow saved with *Save (API Format)*. MonKap knows nothing about what is between the marked nodes, found by their titles: `MonKap Image` (the picture goes in), `MonKap Prompt` (the words), `MonKap Seed`, `MonKap Size` (optional: the size of the result) and `MonKap Result` (a preview node, so nothing lands in ComfyUI's output folder). **Download the reference template** in the settings gives a working one made only of ComfyUI's own nodes, for Qwen Image 2.1: pick your model files in its three loaders, or change whatever you like between the marked nodes (another model, another editor) and use your file instead. Keep the marked nodes and keep them linked; MonKap checks that.
+<p>
+<img src="docs/screenshots/03-enhance-progress.jpg" alt="The progress is drawn on the picture" width="49%">
+<img src="docs/screenshots/04-enhance-diff.jpg" alt="Before and after, with a draggable divider" width="49%">
+</p>
 
-**Enhanced picture size** (settings, Enhance tab): 1 MP, 2 MP (the default), 4 MP, or as the original (at most 4 MP). It reaches the workflow through the `MonKap Size` node; a template made before 0.5.0 has none and ignores the setting (*Check* says so), so download the reference template again to get it. Bigger is slower and needs more video memory.
+The result size is a setting: 1, 2 or 4 megapixels, or the picture's own size. Set the ComfyUI address and a workflow in the settings (see [Set up Enhance](#set-up-enhance)).
 
-The picture is sent to ComfyUI's temporary folder under a random name, the result is fetched from there, and the run is removed from ComfyUI's history afterwards. ComfyUI itself may keep log lines and its temporary files until it restarts.
+## Enhance lab
 
-## Run from source (any system)
+The second icon on the left switches to the lab: a gallery of the whole folder with each picture's size, a rough sharpness estimate (*blurriest first*) and its status.
 
-Needs Python 3.10 or newer.
+![The Enhance lab: a gallery with sizes and a task running](docs/screenshots/05-lab.jpg)
+
+1. **Pick** pictures (click, Shift+click, `Ctrl+A`).
+2. **Make a task** with an optional extra instruction. *Completely override default prompt* makes that instruction the whole prompt; such a task wears an *overridden enhancer defaults* pill.
+3. **Start**: ComfyUI works through the pictures one at a time, with progress and time left.
+4. **Resolve** each result next to its original: **Regenerate**, **Discard**, **Save as new**, **Replace** or **Delete as unfixable**. `PgUp` / `PgDn` walk the pictures that wait.
+
+![Resolve: the original and the enhanced picture, five choices](docs/screenshots/06-resolve.jpg)
+
+Three failures in a row, or a ComfyUI that goes away, stop the task. Tasks and waiting results are kept on disk and survive a restart (a task that was running comes back *stopped*, never started by itself).
+
+## Fizgig
+
+Optional. Point the settings' Fizgig tab at a [Fizgig](https://github.com/shootthesound/Fizgig) install and MonKap reads, from its files only, never writing to them:
+
+- the **trigger word** and **Caption Extension** of a folder,
+- where Fizgig keeps its **latent cache** (erasing a picture for good clears its latents too),
+- the **training review**: after a Fizgig run on the folder, each picture gets a label (Stuck, Suspect, Learning, Learned…), the verdict and what to do about it sit under the caption, and you can filter (*Problems*) and sort (*Hardest first*). A picture whose caption was changed after the run started counts as dealt with.
+
+![Problem pictures first, hardest on top, with the verdict under the caption](docs/screenshots/07-training-review.jpg)
+
+Checked against Fizgig 8.9.3. If Fizgig changes how it stores folders or settings this can stop working; MonKap then falls back to its own settings.
+
+## Install (Windows 10 and 11)
+
+1. Download `MonKap-<version>-setup.exe` from the [latest release](https://github.com/DIGIDWARF-CC/MonKap/releases/latest) and run it. It installs for your user (no administrator rights).
+2. Start **MonKap** from the Start menu and open a folder of pictures.
+
+The installer is not code-signed, so Windows SmartScreen may ask you to confirm (*More info*, *Run anyway*).
+
+MonKap shows its page in the system's **WebView2** runtime. Windows 11 has it; Windows 10 usually gets it with Microsoft Edge. If the window doesn't open, install the Evergreen runtime from <https://developer.microsoft.com/microsoft-edge/webview2/>, or use the Start menu entry **MonKap (in the browser)**.
+
+## Set up captions
+
+Start LM Studio's server (or any OpenAI-compatible one: Ollama, llama.cpp, vLLM…). In the settings set its address (`http://localhost:1234` by default), press Refresh and choose a model that can see pictures. Each task's instruction is editable. The pictures are sent to that address, so use one you trust.
+
+## Set up Enhance
+
+In the settings' Enhance tab set your ComfyUI's address (`http://127.0.0.1:8188` by default) and press **Check**: it tells you, before anything is sent, whether the template is usable and whether that ComfyUI has the nodes and model files it asks for.
+
+- **The template** is a ComfyUI workflow saved with *Save (API Format)*. MonKap finds its marked nodes by title: `MonKap Image` (the picture goes in), `MonKap Prompt` (the words), `MonKap Seed`, `MonKap Size` (optional: the size of the result) and `MonKap Result` (a preview node, so nothing lands in ComfyUI's output folder).
+- **Download the reference template** gives a working one for Qwen Image 2.1, made only of ComfyUI's own nodes: pick your model files in its loaders. Or change anything between the marked nodes (another model, another editor) and use your file instead. A template made before 0.5.0 has no `MonKap Size` node and ignores the size setting; download the reference again to get it.
+- **Free ComfyUI's memory** unloads its models, for when a trainer needs the video memory.
+
+The picture is sent to ComfyUI's temporary folder under a random name, the result is fetched from there, and the run is removed from ComfyUI's history afterwards. ComfyUI itself may keep log lines and temporary files until it restarts.
+
+## Run from source
+
+Needs Python 3.10 or newer, on any system.
 
 ```bash
 git clone https://github.com/DIGIDWARF-CC/MonKap.git
@@ -54,31 +108,14 @@ pip install .
 monkap
 ```
 
-`monkap` starts the local server and opens the page in your browser. `monkap <folder>` opens a folder; `monkap --no-browser` only prints the address (for a Linux box without a browser, or to open it from another program); `monkap --help` lists the rest. `pip install ".[window]"` adds `monkap-gui`, MonKap's own window, on systems where pywebview works.
+`monkap` starts the local server and opens the page in your browser. `monkap <folder>` opens a folder; `monkap --no-browser` only prints the address; `monkap --help` lists the rest. `pip install ".[window]"` adds `monkap-gui`, MonKap's own window, where pywebview works.
 
-## Fizgig
+## Your files and your privacy
 
-Optional. In the settings, the Fizgig tab takes the folder of a [Fizgig](https://github.com/shootthesound/Fizgig) install, and MonKap reads a few things from it instead of asking you twice: the trigger word of a folder, the Caption Extension, and where Fizgig keeps its latent cache (so erasing a picture for good also clears its latents). MonKap only reads Fizgig's files and never writes to them.
-
-**Training review.** With the Fizgig folder set, and once a Fizgig run has trained on the folder you have open, MonKap reads that run's per-image loss watch and shows it where you work: a coloured label on each picture (Stuck, Suspect, Learning, Learned…), the verdict and what to do about it under the caption, a list you can filter ("Problems") and sort ("Hardest first"), and a page that explains every label and, from the run's own settings, which of Fizgig's options could help (auto-recaption, per-image LR, where learning finished). It shows no charts: Fizgig's Runs page has them. A picture whose caption was changed after the run started has been dealt with, whether you changed it or Fizgig's auto-recaption did: its label goes, and "Problems" counts only what is still open. When Fizgig is set up but has no run on the folder, a yellow (!) *No training data* says why when clicked.
-
-![Problem pictures first, hardest on top, with the verdict under the caption](docs/screenshots/03-training-review.jpg)
-
-![What every label means, and what to try in Fizgig](docs/screenshots/04-verdicts-explained.jpg)
-
-The page checks for changes every few seconds while it is open, so verdicts appear as a run writes them, and a new trigger word or caption extension set in Fizgig shows up without reloading. A caption you are typing is never overwritten.
-
-If you moved your Fizgig folder after a run, MonKap still finds the run's results: Fizgig records absolute paths, so when the recorded folder is gone MonKap looks for it in this Fizgig's output folder, and a note under the filters says so. When it finds nothing, the same place says why.
-
-![The Fizgig tab of the settings](docs/screenshots/05-fizgig-settings.jpg)
-
-This depends on the Fizgig version. It was checked against Fizgig 8.9.3, and if Fizgig changes how it stores folders or settings it can stop working (MonKap then falls back to its own settings). Watch for MonKap updates after Fizgig updates.
-
-## What it keeps on your computer
-
-MonKap's own files are the settings, the list of folders you opened and the Enhance lab's tasks and waiting results (enhanced pictures that wait for your decision, so they can be big). The installed program keeps them in the `user_data` folder next to `MonKap.exe`, so removing the program's folder removes them too (the uninstaller asks first). Run from source, they go to `%LOCALAPPDATA%\MonKap` on Windows, `~/.local/share/monkap` on Linux, `~/Library/Application Support/MonKap` on macOS, or to the folder in `MONKAP_HOME`. The settings dialog shows what is there and can remove it; `monkap --forget` does the same. In a dataset folder MonKap keeps a hidden `.monkap` folder (the crop ledger and caption backups), the pictures and captions you asked for, and `removed/` if you remove pictures. Previews and tiles are made in memory.
-
-The server listens on 127.0.0.1 only and wants a session key on every request. The browser keeps its usual cache for the page, as any page does.
+- The server listens on `127.0.0.1` only and wants a session key on every request. Nothing is sent anywhere except to the LM Studio and ComfyUI addresses you set.
+- In a dataset folder MonKap keeps a hidden `.monkap` folder (crop ledger, caption backups, replaced originals), the pictures and captions you asked for, and `removed/` if you remove pictures.
+- Its own files (settings, the folders you opened, the lab's tasks and waiting results) live in `user_data` next to `MonKap.exe`; run from source, in `%LOCALAPPDATA%\MonKap` on Windows, `~/.local/share/monkap` on Linux, `~/Library/Application Support/MonKap` on macOS, or in `MONKAP_HOME`. The settings' Data tab shows what is there and can remove it; `monkap --forget` does the same.
+- The settings' *Current dataset maintenance* tab clears captions, empty caption files and `removed/` for the open folder; every button counts what it would do and asks first.
 
 ## Build the installer
 
@@ -88,7 +125,7 @@ python -m venv .venv
 .venv\Scripts\python packaging\build.py
 ```
 
-This makes `dist\MonKap\MonKap.exe` (a folder, so nothing unpacks itself into the temp folder on start) and, with [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed, `dist\MonKap-<version>-setup.exe`.
+This makes `dist\MonKap\MonKap.exe` and, with [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed, `dist\MonKap-<version>-setup.exe`.
 
 ## Tests
 
@@ -97,12 +134,15 @@ python -m unittest discover -s tests
 node --test "tests/js/*.test.mjs"
 ```
 
-No GPU, no display and no network are needed. The server and the LM Studio client are tested against fake servers.
+No GPU, display or network is needed: the server, LM Studio client and ComfyUI client are tested against fake servers.
 
-## Where it came from
+## Thanks
 
-MonKap started as a dataset tool for a LoRA trainer, and its file logic follows what trainers expect: a picture with no caption file is left out of training, a name never comes back, and a crop is cut from the original pixels.
+MonKap began as a dataset tool for LoRA training, and its file logic follows what trainers expect: a picture with no caption file is left out of training, a name never comes back, and a crop is cut from the original pixels.
+
+Kudos to [**shootthesound**](https://github.com/shootthesound) for giving me an idea to make this app.
+Be sure to check his work as well. [**Fizgig**](https://github.com/shootthesound/Fizgig) is just the one tool you need to do all of the work if you wish to train LoRAs for Flux 2 Klein 9B, Flux 3 Image Klein, Krea 2, MiniMax H3, Qwen Image 2.1, MOSS-Image, Z-Image Turbo, SDXL and Anima, and I really expect more to come.
 
 ## License
 
-GPL-3.0, see `LICENSE`.
+GPL-3.0, see [LICENSE](LICENSE).
