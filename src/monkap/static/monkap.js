@@ -20,7 +20,9 @@
     modal: null, lastDelete: null, review: null, raw: [], mech: null,
   };
   let regen = false;                     // Regenerate (AI) is running
-  let enh = null;                        // an Enhance run is open in its window: {c}
+  let enh = null;                        // an Enhance run of the main view is open: {c}
+  let labBusy = false;                   // tasks of the Enhance lab are going (the server says so in its live answer)
+  const LAB_WAIT = "Tasks of the Enhance lab are running: stop them first";
   // selection mode: sel = the picked names, canvas = one picture opened from the gallery, run = captions being written
   const MS = {on: false, canvas: false, sel: new Set(), anchor: -1, tiles: new Map(), status: new Map(), errors: new Map(),
     run: null, undo: null, note: "", lastMany: null, focusing: null,
@@ -383,6 +385,7 @@
 
   async function open(i) {
     if (i < 0 || i >= M.items.length || M.busy) return;
+    if (enh) { status(ENH_WAIT, "warn"); return; }
     try { await flush(); } catch (e) { status(e.message, "err"); return; }      // the caption stays and the page stays
     const name = M.items[i][0], my = ++M.loadToken;
     M.index = i; markCurrent(); scrollStripTo(i);
@@ -451,31 +454,44 @@
   // the label is the real zoom (1 picture pixel per CSS pixel = 100%)
   function updateZoomUI() {
     const c = M.cur;
-    for (const id of ["mkZoomIn", "mkZoomOut", "mkActual", "mkFit"]) $q(id).disabled = !c;
+    const zoomTitles = {mkZoomIn: "Zoom in", mkZoomOut: "Zoom out", mkActual: "Zoom. Click for one picture pixel per screen pixel", mkFit: "Fit the whole picture"};
+    for (const id of Object.keys(zoomTitles)) { $q(id).disabled = !c; $q(id).title = c ? zoomTitles[id] : "Open a picture first"; }
     $q("mkActual").textContent = c ? Math.round(M.view.scale * 100) + "%" : "100%";
   }
 
   // which buttons make sense now: Kapture needs a frame on the picture; in the gallery of a selection they act on all the picked
   const REGEN_TITLE = $q("mkRegen").title, DELETE_TITLE = $q("mkDelete").title;
   const ENHANCE_TITLE = "Make this picture sharper and cleaner with ComfyUI (set up in the settings, Enhance tab)";
+  const RUN_WAIT = "Wait until the captions are written, or stop them";
+  const NO_PIC = "Open a picture first";
+  // a greyed button always says why: `why` is the reason (empty: the button works), `title` what it says when it works
+  function setBtn(id, why, title) {
+    const b = $q(id);
+    b.disabled = !!why;
+    b.title = why || title;
+  }
   function syncButtons() {
     const c = M.cur, gal = inGallery(), run = !!MS.run;
     const picked = MS.on ? selectedNames() : [], n = picked.length;
     const at = MS.on && c ? picked.indexOf(c.name) : -1;
-    $q("mkKapture").disabled = !c || !M.frame || M.busy || gal || run;
-    $q("mkPrev").disabled = !c || (MS.on ? at <= 0 : M.index <= 0);
-    $q("mkNext").disabled = !c || (MS.on ? at < 0 || at >= n - 1 : M.index >= M.items.length - 1);
-    $q("mkDelete").disabled = gal ? !n || run || M.busy : !c || run;
-    $q("mkRegen").disabled = gal ? !n || run || regen || M.busy : !c || regen || run;
-    $q("mkHintBtn").disabled = $q("mkRegen").disabled;
-    $q("mkEnhance").disabled = !c || gal || regen || !!enh || run;
-    $q("mkEnhHintBtn").disabled = $q("mkEnhance").disabled;
-    $q("mkEnhance").title = gal ? "One picture at a time: open it (double click), then enhance it" : ENHANCE_TITLE;
+    const busy = M.busy ? "Wait a moment: MonKap is working on the folder" : "";
+    setBtn("mkKapture", !c ? NO_PIC : gal ? "Open one picture (double click) to take a frame" : run ? RUN_WAIT : busy ||
+      (!M.frame ? "Drag a frame on the picture first" : ""), "Save the frame as a new picture (C)");
+    setBtn("mkPrev", !c ? NO_PIC : (MS.on ? at <= 0 : M.index <= 0) ? "This is the first picture" : "", "Previous picture (PgUp)");
+    setBtn("mkNext", !c ? NO_PIC : (MS.on ? at < 0 || at >= n - 1 : M.index >= M.items.length - 1) ? "This is the last picture" : "", "Next picture (PgDn)");
+    setBtn("mkDelete", run ? RUN_WAIT : gal ? (!n ? "Pick some pictures first" : busy) : !c ? NO_PIC : "",
+      gal ? `Delete the ${plural(n, "picked picture")} (asks every time)` : DELETE_TITLE);
+    const regenWhy = run ? RUN_WAIT : regen ? "A caption is being written" : gal ? (!n ? "Pick some pictures first" : busy) : !c ? NO_PIC : "";
+    setBtn("mkRegen", regenWhy, gal ? `Write the captions of the ${plural(n, "picked picture")} again, one after another: the old texts are replaced (kept, and Undo brings it back)` : REGEN_TITLE);
+    setBtn("mkHintBtn", regenWhy, "ReCaption with a hint for the model");
+    const enhWhy = !c ? NO_PIC : gal ? "One picture at a time: open it (double click), then enhance it" : regen ? "A caption is being written" :
+      enh ? "An enhance run is going" : run ? RUN_WAIT : labBusy ? LAB_WAIT : "";
+    setBtn("mkEnhance", enhWhy, ENHANCE_TITLE);
+    setBtn("mkEnhHintBtn", enhWhy, "Enhance with your own words for this picture");
     $q("mkRegen").querySelector(".lbl").textContent = gal ? `AI ReCaption (${n})` : "AI ReCaption";
-    $q("mkRegen").title = gal ? `Write the captions of the ${plural(n, "picked picture")} again, one after another: the old texts are replaced (kept, and Undo brings them back)` : REGEN_TITLE;
     $q("mkDelete").querySelector(".lbl").textContent = gal ? `Delete selected (${n})` : "Delete…";
-    $q("mkDelete").title = gal ? `Delete the ${plural(n, "picked picture")} (asks every time)` : DELETE_TITLE;
-    $q("mkShow").disabled = $q("mkSort").disabled = run;       // the picked set holds still while captions are written
+    if (!enh) { $q("mkShow").disabled = $q("mkSort").disabled = run;       // the picked set holds still while captions are written
+      $q("mkShow").title = $q("mkSort").title = run ? RUN_WAIT : ""; }
     $q("mkInfo").style.display = c ? "" : "none";
     root.classList.toggle("has-frame", !!(c && M.frame));
     lockText();
@@ -920,23 +936,79 @@
     watchEnhance(c);
   }
 
-  // the window of a run in progress: the stage, the percent, the latest preview of ComfyUI, Cancel
+  // The run, in the main view and without windows: progress over the picture (its own blurred, darkened self, or ComfyUI's
+  // latest preview once it has one), then the original and the result under one divider. Only the action row changes.
+  const ENH_WAIT = "Finish or stop the enhance of this picture first";
+  const enhEl = {ov: $q("mkEnhOv"), bg: $q("mkEnhBg"), what: $q("mkEnhWhat"), bar: $q("mkEnhBar"), line: $q("mkEnhLine"),
+    diff: $q("mkDiff"), fit: $q("mkDiffFit"), o: $q("mkDiffO"), e: $q("mkDiffE"), cut: $q("mkDiffCut"), row: $q("mkEnhActions")};
+
+  function enhMode(kind) {                                     // "run" | "result" | "failed" | null (leave the main view alone)
+    root.classList.toggle("enhancing", !!kind);
+    enhEl.ov.hidden = !(kind === "run" || kind === "failed");
+    enhEl.ov.classList.toggle("failed", kind === "failed");
+    enhEl.diff.hidden = kind !== "result";
+    enhEl.row.hidden = !kind;
+    if (!kind) enhEl.row.replaceChildren();
+    for (const b of [$q("mkShow"), $q("mkSort")]) { b.disabled = !!kind || !!MS.run; b.title = kind ? ENH_WAIT : (MS.run ? RUN_WAIT : ""); }
+    strip.title = kind ? ENH_WAIT : "";
+    syncButtons();
+    if (kind === "result") placeDiff();
+  }
+
+  // both pictures lie in the same rectangle, fitted into the stage: the original's proportions
+  function placeDiff() {
+    const c = M.cur;
+    if (!c || enhEl.diff.hidden) return;
+    const r = stage.getBoundingClientRect(), pad = 12;
+    const k = Math.min((r.width - 2 * pad) / c.iw, (r.height - 2 * pad) / c.ih);
+    enhEl.fit.style.width = Math.max(40, Math.floor(c.iw * k)) + "px";
+    enhEl.fit.style.height = Math.max(40, Math.floor(c.ih * k)) + "px";
+  }
+  new ResizeObserver(placeDiff).observe(stage);
+
+  function setCut(pct) {
+    pct = Math.max(0, Math.min(100, pct));
+    enhEl.fit.style.setProperty("--cut", pct + "%");
+    enhEl.cut.setAttribute("aria-valuenow", String(Math.round(pct)));
+  }
+  (() => {
+    const at = (e) => { const r = enhEl.fit.getBoundingClientRect(); setCut(100 * (e.clientX - r.left) / r.width); };
+    enhEl.fit.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; enhEl.fit.setPointerCapture(e.pointerId); at(e); e.preventDefault(); });
+    enhEl.fit.addEventListener("pointermove", (e) => { if (enhEl.fit.hasPointerCapture(e.pointerId)) at(e); });
+    enhEl.cut.addEventListener("keydown", (e) => {
+      const now = Number(enhEl.cut.getAttribute("aria-valuenow") || 50), d = e.shiftKey ? 10 : 2;
+      if (e.key === "ArrowLeft") { setCut(now - d); e.preventDefault(); } else if (e.key === "ArrowRight") { setCut(now + d); e.preventDefault(); }
+    });
+  })();
+
+  function enhButtons(...defs) {                                // the one swapped action row: [label, class, title, run]
+    const btns = [];
+    for (const [label, cls, title, run] of defs) {
+      const b = el("button", {type: "button", class: "btn " + cls, title, text: label});
+      b.addEventListener("click", async () => {
+        for (const x of btns) x.disabled = true;
+        try { await run(b); }
+        catch (e) { status(e.message, "err"); for (const x of btns) x.disabled = false; }
+      });
+      btns.push(b);
+    }
+    enhEl.row.replaceChildren(...btns);
+    return btns;
+  }
+
   function watchEnhance(c) {
     enh = {c};
-    syncButtons();
-    const stage = el("div", {class: "lead", text: "Starting…"});
-    const fill = el("i"), bar = el("div", {class: "mk-enh-bar wait"}, fill);
-    const nums = el("div", {class: "mk-enh-line"});
-    const img = el("img", {class: "mk-enh-preview", alt: "The picture as ComfyUI draws it", style: "display:none"});
-    const cancel = el("button", {class: "btn", text: "Cancel"});
-    const body = el("div", {}, el("h2", {text: `Enhancing ${c.name}`}), stage, bar, nums, img, el("div", {class: "buttons"}, cancel));
-    const {done} = dialog(body);
-    const leave = (msg, kind) => { done(); enh = null; syncButtons(); if (msg) status(msg, kind || ""); };
-    cancel.addEventListener("click", async () => {
-      cancel.disabled = true; cancel.textContent = "Cancelling…";
+    enhEl.bg.src = url("view", {name: c.name, edge: 800});
+    enhEl.what.textContent = "Starting…";
+    enhEl.bar.classList.add("wait"); enhEl.bar.firstChild.style.width = "";
+    enhEl.line.replaceChildren();
+    enhMode("run");
+    const stop = enhButtons(["Stop", "btn-danger", "Stop the enhance of this picture", async (b) => {
+      b.textContent = "Stopping…";
       try { await api("/api/enhance/cancel", {}); } catch (e) { /* the loop below ends it when the server says so */ }
-    });
-    cancel.focus();
+    }])[0];
+    stop.focus();
+    const leave = (msg, kind) => { enh = null; enhMode(null); if (msg) status(msg, kind || ""); focusHome(); };
     (async () => {
       let seen = 0, lost = 0;
       for (;;) {
@@ -944,90 +1016,60 @@
         try { st = await api("/api/enhance/status"); lost = 0; }
         catch (e) { if (++lost > 20) { leave("MonKap lost touch with its own server.", "err"); return; } await sleep(500); continue; }
         if (st.status === "none") { leave(); return; }
-        if (st.status === "cancelled") { leave("Enhance cancelled.", "warn"); return; }
+        if (st.status === "cancelled") { leave("Enhance stopped.", "warn"); return; }
         if (st.status === "error") {
-          body.replaceChildren(el("h2", {text: "Enhance failed"}), el("div", {class: "lead", text: st.error || "Something went wrong."}),
-            el("div", {class: "buttons"}, el("button", {class: "btn", text: "Settings", onclick: () => { leave(); openSettings("enhance"); }}),
-              el("button", {class: "btn btn-primary", text: "Close", onclick: () => leave()})));
+          enhEl.what.textContent = st.error || "Something went wrong.";
+          enhEl.bar.hidden = true; enhEl.line.replaceChildren();
+          enhMode("failed");
+          enhButtons(["Settings", "", "Check the ComfyUI address and the template", () => { leave(); openSettings("enhance"); }],
+            ["Close", "btn-primary", "Back to the picture", () => { enhEl.bar.hidden = false; leave(); }]);
           return;
         }
-        if (st.status === "done") { showEnhanced(c, st, body, leave); return; }
-        stage.textContent = st.stage + (st.steps ? `  (step ${st.step} of ${st.steps})` : "");
-        bar.classList.toggle("wait", st.percent === null);
-        fill.style.width = st.percent === null ? "" : st.percent + "%";
+        if (st.status === "done") { enhEl.bar.hidden = false; showEnhanced(c, st, leave); return; }
+        enhEl.bar.hidden = false;
+        enhEl.what.textContent = st.stage + (st.steps ? `  (step ${st.step} of ${st.steps})` : "");
+        enhEl.bar.classList.toggle("wait", st.percent === null);
+        enhEl.bar.firstChild.style.width = st.percent === null ? "" : st.percent + "%";
         const parts = [el("span", {text: mmss(st.elapsed)})];
         if (st.percent !== null) parts.push(el("span", {text: st.percent + "%"}));
         if (!st.live) parts.push(el("span", {text: "no progress information from ComfyUI"}));
         if (st.idle > 20) parts.push(el("span", {class: "warn", text: `no signal for ${Math.round(st.idle)} s (a model may be loading)`}));
-        nums.replaceChildren(...parts);
-        if (st.preview && st.preview !== seen) { seen = st.preview; img.src = "/api/enhance/preview?v=" + seen; img.style.display = ""; }
+        enhEl.line.replaceChildren(...parts);
+        if (st.preview && st.preview !== seen) { seen = st.preview; enhEl.bg.src = "/api/enhance/preview?v=" + seen; }
         await sleep(500);
       }
     })();
   }
 
-  // the window of a result: look at it, then Retry (new seed), Discard, Replace or Store as Kapture
-  function showEnhanced(c, st, body, leave) {
-    body.closest(".mk-dialog").classList.add("wide");
-    let mode = "after";
-    const orig = el("img", {src: url("view", {name: c.name, edge: 2000}), alt: "Original"});
-    const made = el("img", {src: "/api/enhance/result?v=" + st.seed, alt: "Enhanced"});
-    const capO = el("figcaption", {text: `Original · ${c.iw}×${c.ih}`}), capE = el("figcaption", {text: "Enhanced"});
-    made.addEventListener("load", () => { capE.textContent = `Enhanced · ${made.naturalWidth}×${made.naturalHeight}`; });
-    const figs = {before: el("figure", {}, orig, capO), after: el("figure", {}, made, capE)};
-    const area = el("div", {class: "mk-enh-stage"});
-    const seg = el("div", {class: "mk-enh-seg", role: "group", "aria-label": "What to look at"});
-    const modes = [["before", "Original"], ["after", "Enhanced"], ["both", "Side by side"]];
-    const draw = () => {
-      area.replaceChildren(...(mode === "both" ? [figs.before, figs.after] : [figs[mode]]));
-      for (const b of seg.children) b.classList.toggle("on", b.dataset.mode === mode);
-    };
-    for (const [m, label] of modes) seg.append(el("button", {type: "button", "data-mode": m, text: label, onclick: () => { mode = m; draw(); }}));
-    for (const i of [orig, made]) i.addEventListener("click", () => { if (mode !== "both") { mode = mode === "after" ? "before" : "after"; draw(); } });
-    draw();
-    const msg = el("div", {class: "field-hint warn"});
-    const btns = [];
-    const act = (label, cls, title, run) => {
-      const b = el("button", {type: "button", class: "btn " + cls, text: label, title});
-      b.addEventListener("click", async () => {
-        for (const x of btns) x.disabled = true;
-        msg.textContent = "";
-        try { await run(); }
-        catch (e) { msg.textContent = e.message; for (const x of btns) x.disabled = false; }
-      });
-      btns.push(b);
-      return b;
-    };
+  // the result: the interactive diff, and Retry (new seed), Discard, Replace or Store as Kapture
+  function showEnhanced(c, st, leave) {
+    enhEl.o.src = url("view", {name: c.name, edge: 2000});
+    enhEl.e.src = "/api/enhance/result?v=" + st.seed;
+    setCut(50);
+    enhMode("result");
     const decide = (action, extra = {}) => api("/api/enhance/decide", {action, folder: M.folder, name: c.name, ...extra});
-    const bar = el("div", {class: "buttons enh"},
-      act("Retry (new seed)", "", "Enhance the same picture again with another seed", async () => {
-        await decide("retry");
-        leave();
-        watchEnhance(c);
-      }),
-      act("Discard", "", "Throw the result away", async () => { await decide("discard"); leave("Enhance result discarded."); }),
-      act("Replace", "", "The enhanced picture takes the original's place; the original is kept and Undo brings it back", async () => {
+    const btns = enhButtons(
+      ["Retry (new seed)", "", "Enhance the same picture again with another seed", async () => { await decide("retry"); watchEnhance(c); }],
+      ["Discard", "", "Throw the result away", async () => { await decide("discard"); leave("Enhance result discarded."); }],
+      ["Replace", "", "The enhanced picture takes the original's place; the original is kept and Undo brings it back", async () => {
         const r = await decide("replace");
         leave();
         await showAgain(r.name);
         status(`Replaced ✓  ${r.name}  (${r.size[0]}×${r.size[1]}); the original is kept.`, "ok", {label: "Undo", run: async () => {
           try {
-            await api("/api/enhance/undo", {folder: M.folder, name: r.name, backup: r.backup, old: r.old});
+            await api("/api/enhance/undo", {folder: M.folder, name: r.name, backup: r.backup, old: r.old, was_enhanced: r.was_enhanced});
             dropBitmap(r.name);
             await showAgain(r.old);
             status("The original is back.", "ok");
           } catch (e) { status(`Undo failed: ${e.message}`, "err"); }
         }});
-      }),
-      act("Store as Kapture", "btn-primary", "Save it as a new picture next to the original, named and captioned like a crop", async () => {
+      }],
+      ["Store as Kapture", "btn-primary", "Save it as a new picture next to the original, named and captioned like a crop", async () => {
         const r = await decide("kapture", {text: text.value, trigger: M.trigger});
         leave();
         await refreshList();
         status(`Saved ✓  ${r.name}  (${r.size[0]}×${r.size[1]})${r.notes.length ? " - " + r.notes.join("; ") : ""}`, r.notes.length ? "warn" : "ok");
-      }));
-    body.replaceChildren(el("h2", {text: "Enhanced"}),
-      el("div", {class: "field-hint", text: `Click the picture to switch between the original and the enhanced one. Seed ${st.seed}, ${mmss(st.elapsed)}.`}),
-      seg, area, msg, bar);
+      }]);
     btns[btns.length - 1].focus();
   }
 
@@ -1152,6 +1194,7 @@
 
   async function enterSelection() {
     if (MS.on || !M.folder || !M.items.length || M.modal) return;
+    if (enh) { status(ENH_WAIT, "warn"); return; }
     try { await flush(); } catch (e) { status(e.message, "err"); return; }
     clearFrame();
     const exist = new Set(M.raw.map((it) => it[0]));
@@ -1450,6 +1493,7 @@
 
   async function openFolderDialog() {
     if (M.modal || MS.run) return;
+    if (enh) { status(ENH_WAIT, "warn"); return; }
     const path = el("input", {type: "text", spellcheck: "false", placeholder: "Folder path", value: M.folder || "", style: "flex:1 1 280px"});
     const trig = el("input", {type: "text", spellcheck: "false", placeholder: "optional, e.g. ohwx", value: M.trigger || ""});
     const list = el("div", {class: "mk-browse"});
@@ -1718,7 +1762,11 @@
       if (r.error) enhReport.append(say(r.error, "warn"));
       for (const p of r.problems || []) enhReport.append(say("• " + p, "warn"));
       if (r.ok) enhReport.append(say(`The template is fine and this ComfyUI can run it (${r.custom ? "your template" : "the reference template"}, version ${r.version}).`, "ok-note"));
+      if (r.ok && !r.has_size) enhReport.append(say("This template has no \"MonKap Size\" node, so the setting \"Enhanced picture size\" does nothing with it. Download the current reference template to see how it is wired.", "warn"));
     }
+    const enhSize = el("select", {"data-k": "enhance_size", "data-t": "select"},
+      [["1mp", "1 MP"], ["2mp", "2 MP (default)"], ["4mp", "4 MP"], ["original", "As the original (at most 4 MP)"]].map(([v, t]) => el("option", {value: v, text: t})));
+    enhSize.value = ["1mp", "2mp", "4mp", "original"].includes(s.enhance_size) ? s.enhance_size : "2mp";
     const freeComfy = async () => {
       enhReport.replaceChildren(say("Asking ComfyUI…"));
       try { await api("/api/enhance/free", {url: comfyUrl.value.trim()}); enhReport.replaceChildren(say("ComfyUI was asked to unload its models and free the memory.", "ok-note")); }
@@ -1734,11 +1782,13 @@
       hint("A workflow saved in ComfyUI with Save (API Format). Empty: the reference template, made of ComfyUI's own nodes for Qwen Image 2.1."),
       row("Words:", enhWords),
       hint("What the template is told to do. Empty: the template's own words. Your words for one picture (the arrow next to Enhance) are added after these."),
+      row("Enhanced picture size:", enhSize),
+      hint("How big the enhanced picture is made. Larger is slower and needs more video memory. It works through the template's \"MonKap Size\" node; a template made before 0.5.0 ignores it (Check says so)."),
       enhReport,
       el("div", {class: "row"},
         el("a", {class: "btn btn-sm", href: "/api/enhance/template", download: "monkap-enhance-reference.json", text: "Download the reference template"}),
         el("button", {type: "button", class: "btn btn-sm", text: "Free ComfyUI's memory", title: "Unload its models, so a trainer has the video memory", onclick: freeComfy})),
-      el("div", {class: "mk-warn", text: "Your own template: download the reference, open it in ComfyUI (drag the file into the window) and change what you like between the four nodes titled \"MonKap Image\", \"MonKap Prompt\", \"MonKap Seed\" and \"MonKap Result\". Those four are how MonKap talks to the workflow: keep them, and keep them linked. Then Save (API Format) and put the file's path above. Finish the workflow with a preview node, so nothing is written to ComfyUI's output folder."})];
+      el("div", {class: "mk-warn", text: "Your own template: download the reference, open it in ComfyUI (drag the file into the window) and change what you like between the four nodes titled \"MonKap Image\", \"MonKap Prompt\", \"MonKap Seed\", \"MonKap Size\" (optional) and \"MonKap Result\". Those are how MonKap talks to the workflow: keep them, and keep them linked. Then Save (API Format) and put the file's path above. Finish the workflow with a preview node, so nothing is written to ComfyUI's output folder."})];
 
     // -- the open folder's housekeeping: every action counts first and always asks (the asking cannot be switched off)
     const mOut = el("div", {class: "field-hint", style: "margin-top:8px"});
@@ -1998,6 +2048,12 @@
       const now = await api(url("live", {name: c ? c.name : ""}));
       const was = live;
       live = now;
+      const lb = !!(now.busy && now.busy.lab);
+      if (lb !== labBusy) { labBusy = lb; syncButtons(); }
+      if (!enh && c && M.cur === c && now.busy && now.busy.single) {   // the page was reloaded during a run: pick it up again
+        const st = await api("/api/enhance/status");
+        if (st.name === c.name && st.folder === M.folder && !enh) watchEnhance(c);
+      }
       if (!was) return;                                           // the first answer is only the starting point
       if (now.ext !== was.ext) { M.ext = now.ext; }
       if (now.trigger !== was.trigger) { M.trigger = now.trigger; triggerState(); }

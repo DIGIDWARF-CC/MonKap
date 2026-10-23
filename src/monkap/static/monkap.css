@@ -19,6 +19,26 @@
   border-radius: var(--radius-sm); overflow: hidden; outline: none; touch-action: none; }
 .mk-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .mk-stage:focus-visible, .mk.selecting .mk-stage { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+/* Enhance in the main view: progress over the picture, then the original and the result with a divider; the action row is swapped */
+.mk-enhov, .mk-diff { position: absolute; inset: 0; z-index: 8; background: #10151b; }
+.mk-enhov[hidden], .mk-diff[hidden], #mkEnhActions[hidden] { display: none; }
+.mk-enhov { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.mk-enhov .bg { position: absolute; inset: -6%; width: 112%; height: 112%; object-fit: contain; filter: blur(22px) brightness(.45); }
+.mk-enhov .box { position: relative; width: min(420px, 80%); text-align: center; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
+.mk-enhov .what { font-size: 15px; margin-bottom: 4px; }
+.mk-enhov .mk-enh-line { justify-content: center; color: #d8dee6; }
+.mk-enhov.failed .what { color: var(--danger); }
+.mk-diff { display: flex; align-items: center; justify-content: center; }
+.mk-diff .fit { position: relative; user-select: none; touch-action: none; }
+.mk-diff img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.mk-diff .e { clip-path: inset(0 0 0 var(--cut, 50%)); }
+.mk-diff .cut { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 22px; margin-left: -11px; cursor: ew-resize; outline: none; }
+.mk-diff .cut::before { content: ""; position: absolute; top: 0; bottom: 0; left: 10px; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
+.mk-diff .cut span { position: absolute; top: 50%; left: 1px; width: 20px; height: 34px; margin-top: -17px; border-radius: 10px; background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .6); }
+.mk-diff .cut:focus-visible span { box-shadow: 0 0 0 3px var(--accent); }
+.mk.enhancing .mk-main > .mk-actions:not(#mkEnhActions) { display: none; }
+.mk.enhancing .mk-strip { cursor: not-allowed; }
 .mk-kap { position: absolute; left: 10px; bottom: 10px; display: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
 .mk.has-frame .mk-kap { display: inline-flex; }
 .mk-kap:disabled { opacity: .6; cursor: default; }
