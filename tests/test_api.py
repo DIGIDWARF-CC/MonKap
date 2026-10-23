@@ -64,20 +64,23 @@ class ListAndLocateTests(ApiCase):
     def test_list_is_natural_ordered_with_caption_flags(self):
         h = call_get("/api/list", folder=self.ds)
         self.assertEqual(h.code, 200)
-        self.assertEqual(h.data["items"], [["img_1.jpg", 0], ["img_2.png", 1], ["img_10.png", 0]])
+        rows = [r[:3] for r in h.data["items"]]
+        self.assertEqual([(r[0], r[1], r[2]) for r in rows], [("img_1.jpg", 0, "none"), ("img_2.png", 1, "manual"), ("img_10.png", 0, "none")])
+        self.assertEqual([r[3] > 0 for r in h.data["items"]], [False, True, False])         # the caption's change time
+        self.assertEqual([r[4] for r in h.data["items"]], [0, 0, 0])                          # none enhanced
 
     def test_list_skips_non_pictures_hidden_files_and_subfolders(self):
         open(os.path.join(self.ds, "notes.md"), "w").close()
         open(os.path.join(self.ds, ".hidden.png"), "wb").close()
         os.makedirs(os.path.join(self.ds, "sub.png"))
-        names = [n for n, _ in call_get("/api/list", folder=self.ds).data["items"]]
+        names = [r[0] for r in call_get("/api/list", folder=self.ds).data["items"]]
         self.assertEqual(names, ["img_1.jpg", "img_2.png", "img_10.png"])
 
     def test_the_caption_flag_follows_the_caption_extension(self):
         open(os.path.join(self.ds, "img_10.caption"), "w").close()
         call_post("/api/settings", {"settings": {"caption_ext": ".caption"}})
         items = call_get("/api/list", folder=self.ds).data["items"]
-        self.assertEqual(dict(items), {"img_1.jpg": 0, "img_2.png": 0, "img_10.png": 1})
+        self.assertEqual({r[0]: r[1] for r in items}, {"img_1.jpg": 0, "img_2.png": 0, "img_10.png": 1})
 
     def test_a_missing_folder_is_404(self):
         self.assertEqual(call_get("/api/list", folder=os.path.join(self.d, "nope")).code, 404)

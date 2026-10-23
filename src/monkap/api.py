@@ -14,9 +14,9 @@ from dataclasses import replace
 
 from PIL import Image
 
-from . import __version__, appdata, dataset, enhance
+from . import __version__, appdata, dataset, enhance, maintenance
 from .ai import lmstudio, tasks
-from .core import captions, jobs, ledger
+from .core import captions, jobs, journal, ledger
 from .integrations import fizgig, fizgig_review
 from .core.fsutil import IMAGE_EXTS
 from .core.naming import TemplateError, example_names, normalize_template
@@ -140,21 +140,50 @@ def _int(qs, key, default=0, lo=-(1 << 31), hi=1 << 31) -> int:
         return default
 
 
+def _stem(name: str) -> str:
+    return os.path.splitext(name)[0]
+
+
+def _caption_state(folder: str, path: str, name: str, ext: str) -> dict:
+    """What the page shows of a caption: who wrote it ("none" / "ai" / "manual"), when the file changed, and the note the
+    journal keeps of the picture (so that an Undo can put it back)."""
+    note = journal.entry(folder, _stem(name))
+    text = captions.read_caption(path, ext)
+    try:
+        mtime = round(os.path.getmtime(captions.caption_path(path, ext)), 3) if text is not None else 0
+    except OSError:
+        mtime = 0
+    return {"class": journal.classify(text, note), "mtime": mtime, "enhanced": bool(note and note.get("enhanced"))}
+
+
 def info(folder, name, ext) -> dict:
     folder, path = dataset.locate(folder, name)
     text = captions.read_caption(path, ext)
     row = next((r for r in reversed(ledger.read_provenance(folder)) if str(r.get("file", "")).lower() == name.lower()), None)
     inherited = bool(text and row and row.get("caption_sha1") == captions.text_digest(text))
     return {"name": name, "size": dataset.picture_size(path), "caption": text, "inherited": inherited,
-            "mtime": int(os.path.getmtime(path))}
+            "mtime": int(os.path.getmtime(path)), **_caption_state(folder, path, name, ext)}
 
 
-def save_caption(folder, name, text, loaded, ext) -> dict:
-    _, path = dataset.locate(folder, name)
+_UNSET = object()
+
+
+def save_caption(folder, name, text, loaded, ext, mechanical=False, restore=_UNSET) -> dict:
+    """Save the editor's text. `mechanical` says the text was changed by a button (the trigger word), not typed: the model's
+    caption then stays the model's. `restore` (an Undo) puts the picture's journal note back exactly as it was."""
+    folder, path = dataset.locate(folder, name)
     res = captions.save_caption(path, str(text or ""), None if loaded is None else str(loaded), ext)
+    stem = _stem(name)
+    if restore is not _UNSET:
+        journal.set_entry(folder, stem, restore if isinstance(restore, dict) else None)
+    elif mechanical and res.kind == "written":
+        new = str(text or "").strip()
+        if new == captions.ensure_trigger_prefix(loaded or "", folder_trigger(folder)):    # really the trigger word, nothing typed
+            journal.keep_class(folder, stem, loaded, new)
     backup = os.path.relpath(res.backup, folder) if res.backup else ""
     return {"kind": res.kind, "backup": backup, "conflict": res.conflict,
-            "has_caption": res.kind in ("written", "unchanged") and bool(str(text or "").strip())}
+            "has_caption": res.kind in ("written", "unchanged") and bool(str(text or "").strip()),
+            **_caption_state(folder, path, name, ext)}
 
 
 def kapture(folder, name, box, parent_text, trigger, ext) -> dict:
@@ -188,6 +217,7 @@ def delete(folder, name, ext) -> dict:
         return {"mode": DELETE_SOFT, "moved": dataset.remove(folder, name, ext)}
     cache = fizgig.latent_cache_for(s.fizgig_dir, folder) if s.fizgig_dir and s.fizgig_cache else s.latent_cache_dir
     res = jobs.delete_permanently(path, cache, ext)
+    journal.forget(folder, _stem(name))                       # gone for good: its note goes too (a soft delete keeps it, for Undo)
     return {"mode": "hard", "purged": res.purged, "notes": res.notes}
 
 
@@ -226,16 +256,36 @@ def review(folder: str) -> dict:
     rev = fizgig_review.review(s.fizgig_dir, os.path.abspath(folder))
     if not rev.get("available"):
         return {**base, **rev}
-    names = {os.path.splitext(n)[0]: n for n, _c in dataset.list_folder(folder, effective_ext(s))}
-    verdicts = {}
+    rows = {os.path.splitext(r[0])[0]: r for r in dataset.list_folder(folder, effective_ext(s))}
+    started = rev["run"].get("started_at")
+    verdicts, handled = {}, 0
     for key, v in rev["images"].items():
-        name = names.get(key)
-        if name and v["verdict"] in fizgig_review.VERDICTS:
+        row = rows.get(key)
+        if row and v["verdict"] in fizgig_review.VERDICTS:
+            if isinstance(started, (int, float)) and row[1] and row[2] > started:
+                handled += 1                                 # its caption changed after the run read it: dealt with
+                continue
             label, color, means, todo = fizgig_review.VERDICTS[v["verdict"]]
-            verdicts[name] = {**v, "label": label, "color": color, "means": means, "todo": todo}
+            verdicts[row[0]] = {**v, "label": label, "color": color, "means": means, "todo": todo}
     counts = {k: sum(1 for v in verdicts.values() if v["verdict"] == k) for k in fizgig_review.ORDER}
     return {**base, "available": True, "run": rev["run"], "report": rev["report"], "settings": rev["settings"],
-            "verdicts": verdicts, "counts": counts, "advice": fizgig_review.advice(rev)}
+            "verdicts": verdicts, "counts": counts, "handled": handled, "advice": fizgig_review.advice(rev)}
+
+
+def list_items(folder: str, ext: str) -> list[list]:
+    """The pictures with what the strip shows of each: [name, has a caption, who wrote it ("none" / "ai" / "manual"), the caption's
+    change time, was enhanced]. The journal is read once; a caption is read only for a picture the model has written for."""
+    rows = dataset.list_folder(folder, ext)
+    notes = journal.load(folder)
+    out = []
+    for name, has, mtime in rows:
+        note = notes.get(_stem(name)) or {}
+        klass = "none"
+        if has:
+            text = captions.read_caption(os.path.join(folder, name), ext) if note.get("ai") else None
+            klass = journal.classify(text, note) if note.get("ai") else "manual"
+        out.append([name, has, klass, mtime, 1 if note.get("enhanced") else 0])
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ what changed meanwhile
@@ -307,8 +357,23 @@ def recaption(folder, name, ext, hint="") -> dict:
     if trigger:
         text = captions.ensure_trigger_prefix(text, trigger)
     before = captions.read_caption(path, ext)
+    note_before = journal.entry(folder, _stem(name))
     res = captions.save_caption(path, text, before, ext)
-    return {"caption": text, "kind": res.kind, "before": before}
+    journal.mark_ai(folder, _stem(name), captions.read_caption(path, ext) or text, s.lm_model)
+    return {"caption": text, "kind": res.kind, "before": before, "note_before": note_before,
+            **_caption_state(folder, path, name, ext)}
+
+
+def unload_model() -> dict:
+    """Unload the caption model from LM Studio (its instances only; the other models loaded there are left alone). A model that
+    is not loaded is not an error."""
+    s = load_settings()
+    if not s.lm_model:
+        raise ValueError("Pick a model in the settings (the gear) first.")
+    try:
+        return {"unloaded": lmstudio.unload(s.lm_url, s.lm_model)}
+    except OSError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 # ------------------------------------------------------------------------------------------------ routes
@@ -322,7 +387,7 @@ def get(h, path, qs) -> None:
             ext = effective_ext()
             folder = os.path.abspath(one("folder"))
             return h.json({"folder": folder, "ext": ext, "trigger": folder_trigger(folder),
-                           "items": dataset.list_folder(folder, ext)})
+                           "items": list_items(folder, ext)})
         if path == "/api/info":
             return h.json(info(one("folder"), one("name"), effective_ext()))
         if path in ("/api/thumb", "/api/view", "/api/tile"):
@@ -382,11 +447,16 @@ def post(h, path, b) -> None:
     try:
         ext = effective_ext()
         if path == "/api/caption":
-            return h.json(save_caption(b.get("folder"), b.get("name"), b.get("text"), b.get("loaded"), ext))
+            return h.json(save_caption(b.get("folder"), b.get("name"), b.get("text"), b.get("loaded"), ext,
+                                       bool(b.get("mechanical")), b["restore"] if "restore" in b else _UNSET))
         if path == "/api/kapture":
             return h.json(kapture(b.get("folder"), b.get("name"), b.get("box"), b.get("text"), b.get("trigger"), ext))
         if path == "/api/delete":
             return h.json(delete(b.get("folder"), b.get("name"), ext))
+        if path == "/api/ai/unload":
+            return h.json(unload_model())
+        if path == "/api/maintenance":
+            return h.json(maintenance.run(b.get("folder"), str(b.get("action") or ""), ext, bool(b.get("dry")), b.get("items")))
         if path == "/api/delete_many":
             return h.json(delete_many(b.get("folder"), b.get("names"), ext))
         if path == "/api/undelete":
@@ -422,7 +492,7 @@ def post(h, path, b) -> None:
                                          b.get("text"), b.get("trigger"), ext))
         if path == "/api/enhance/undo":
             return h.json(enhance.undo_replace(str(b.get("folder") or ""), str(b.get("name") or ""), str(b.get("backup") or ""),
-                                               str(b.get("old") or "")))
+                                               str(b.get("old") or ""), bool(b.get("was_enhanced"))))
         if path == "/api/data/forget":
             return h.json({"removed": appdata.forget()})
     except NotFound as exc:

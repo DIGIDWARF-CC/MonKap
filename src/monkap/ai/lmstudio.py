@@ -69,6 +69,42 @@ def list_models(url) -> list:
     return out
 
 
+def _post_json(url, payload, timeout=_PROBE_TIMEOUT * 5):
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST",
+                                 headers={"Content-Type": "application/json", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read().decode("utf-8", "replace")
+    return json.loads(raw) if raw.strip() else {}
+
+
+def unload(url, model) -> int:
+    """Unload every loaded instance of `model` (LM Studio's own API). Returns how many were unloaded: a model that is not
+    loaded is not an error, it is 0. Raises OSError when the server isn't there and ValueError when it isn't LM Studio."""
+    base = base_url(url)
+    try:
+        data = _get_json(base + "/api/v1/models")
+    except urllib.error.HTTPError as e:
+        raise ValueError(f"{base} can't unload models: it is not LM Studio's own API.") from e
+    except urllib.error.URLError as e:
+        raise OSError(f"Nothing answers at {base} ({e.reason}).") from e
+    except (TimeoutError, OSError) as e:
+        raise OSError(f"Nothing answers at {base} ({e}).") from e
+    except ValueError as e:
+        raise ValueError(f"{base} didn't answer like LM Studio.") from e
+    ids = [str(i.get("id")) for m in (data.get("models") or data.get("data") or [])
+           if str(m.get("key") or m.get("id")) == model for i in (m.get("loaded_instances") or []) if i.get("id")]
+    done = 0
+    for iid in ids:
+        try:
+            _post_json(base + "/api/v1/models/unload", {"instance_id": iid})
+            done += 1
+        except urllib.error.HTTPError:
+            continue                                 # gone meanwhile (unloaded in LM Studio itself): fine
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise OSError(f"Nothing answers at {base} ({getattr(e, 'reason', e)}).") from e
+    return done
+
+
 def _data_uri(path) -> str:
     from PIL import Image
     im = Image.open(path)                     # the pixels as stored, the way training reads them

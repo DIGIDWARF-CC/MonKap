@@ -12,7 +12,7 @@ import threading
 
 from . import dataset
 from .ai import comfy
-from .core import jobs
+from .core import jobs, journal
 from .core.settings import MonkapSettings
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai", "templates", "enhance-qwen21-reference.json")
@@ -161,6 +161,10 @@ def decide(s: MonkapSettings, action: str, folder: str, name: str, parent_text: 
         if not os.path.isfile(path):
             raise ValueError("The original picture isn't there any more.")
         out = jobs.replace_picture(path, data)
+        stem = os.path.splitext(out["name"])[0]
+        before = journal.entry(os.path.dirname(path), stem)
+        out["was_enhanced"] = bool(before and before.get("enhanced"))     # for Undo
+        journal.mark_enhanced(os.path.dirname(path), stem, True)
     elif action == "kapture":
         out = _store(s, path, data, parent_text, trigger, ext)
     else:
@@ -179,8 +183,11 @@ def _store(s: MonkapSettings, path: str, data: bytes, parent_text: str, trigger:
         except FileExistsError:
             if attempt == 2:
                 raise
+    journal.mark_enhanced(os.path.dirname(path), os.path.splitext(os.path.basename(res.path))[0], True)
     return {"name": os.path.basename(res.path), "size": list(res.size), "caption": res.caption, "notes": res.notes}
 
 
-def undo_replace(folder: str, name: str, backup: str, old: str) -> dict:
-    return {"restored": jobs.revert_replace(folder, name, backup, old)}
+def undo_replace(folder: str, name: str, backup: str, old: str, was_enhanced: bool = False) -> dict:
+    restored = jobs.revert_replace(folder, name, backup, old)
+    journal.mark_enhanced(os.path.abspath(folder), os.path.splitext(restored)[0], was_enhanced)
+    return {"restored": restored}

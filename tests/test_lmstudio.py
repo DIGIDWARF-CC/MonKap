@@ -1,4 +1,5 @@
 """LM Studio captions against a fake server (no LM Studio, no GPU)."""
+import copy
 import json
 import os
 import sys
@@ -23,6 +24,9 @@ class Fake(BaseHTTPRequestHandler):
     seen = []
     reply = {"choices": [{"message": {"content": "  \"A dog on a lawn.\"\n"}, "finish_reason": "stop"}]}
     status = 200
+    models = MODELS
+    unloaded = []
+    own_api = True                  # False: a server that has no LM Studio API (the OpenAI list only)
 
     def log_message(self, *a):
         pass
@@ -36,12 +40,17 @@ class Fake(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self):
-        if self.path == "/api/v1/models":
-            return self._send(200, MODELS)
+        if self.path == "/api/v1/models" and Fake.own_api:
+            return self._send(200, Fake.models)
         self._send(404, {})
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path == "/api/v1/models/unload":
+            Fake.unloaded.append(body["instance_id"])
+            for m in Fake.models["models"]:
+                m["loaded_instances"] = [i for i in m.get("loaded_instances", []) if i["id"] != body["instance_id"]]
+            return self._send(200, {"instance_id": body["instance_id"]})
         Fake.seen.append(body)
         if Fake.status != 200:
             return self._send(Fake.status, {"error": {"message": "model failed to load"}})
@@ -66,6 +75,28 @@ class LmStudioTests(unittest.TestCase):
     def setUp(self):
         Fake.seen.clear()
         Fake.status = 200
+        Fake.models, Fake.own_api = copy.deepcopy(MODELS), True
+        Fake.unloaded.clear()
+
+    def test_unload_takes_the_models_instances_out_and_leaves_the_others(self):
+        Fake.models["models"][3]["loaded_instances"] = [{"id": "other"}]           # another model loaded: not ours
+        self.assertEqual(lmstudio.unload(self.url, "vis"), 1)
+        self.assertEqual(Fake.unloaded, ["vis"])
+        self.assertEqual([m["loaded"] for m in lmstudio.list_models(self.url)], [False, True])
+
+    def test_unloading_what_is_not_loaded_is_not_an_error(self):
+        self.assertEqual(lmstudio.unload(self.url, "vis2"), 0)
+        self.assertEqual(lmstudio.unload(self.url, "not-a-model"), 0)
+        self.assertEqual(lmstudio.unload(self.url, "vis"), 1)
+        self.assertEqual(lmstudio.unload(self.url, "vis"), 0)                     # again: nothing left, no error
+        self.assertEqual(Fake.unloaded, ["vis"])
+
+    def test_unload_says_when_the_server_is_not_lm_studio_or_not_there(self):
+        Fake.own_api = False
+        with self.assertRaisesRegex(ValueError, "not LM Studio"):
+            lmstudio.unload(self.url, "vis")
+        with self.assertRaises(OSError):
+            lmstudio.unload("http://127.0.0.1:9", "vis")
 
     def test_address_is_tidied(self):
         self.assertEqual(lmstudio.base_url(""), "http://localhost:1234")

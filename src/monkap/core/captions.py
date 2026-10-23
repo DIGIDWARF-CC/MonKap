@@ -100,6 +100,9 @@ def _backup_text(img_path: str, old_text: str) -> str:
     return dest
 
 
+backup_text = _backup_text          # for other modules: keep a caption's text before it is cleared
+
+
 def save_caption(img_path: str, text: str, loaded: str | None, ext: str = ".txt") -> SaveResult:
     """Persist the editor's text for `img_path`.
 

@@ -194,6 +194,30 @@ class DecisionTests(Case):
         self.assertEqual(back.data, {"restored": "shot.png"})
         self.assertEqual(read(os.path.join(self.ds, "shot.png")), self.original)
 
+    def enhanced(self):
+        return {r[0]: r[4] for r in api.list_items(self.ds, ".txt")}
+
+    def test_a_stored_picture_is_marked_enhanced_and_the_original_is_not(self):
+        out = self.decide("kapture", text="x", trigger="").data
+        self.assertEqual(self.enhanced(), {"shot.png": 0, out["name"]: 1})
+
+    def test_replace_marks_the_picture_and_undo_gives_the_old_mark_back(self):
+        out = self.decide("replace").data
+        self.assertEqual((out["was_enhanced"], self.enhanced()["shot.png"]), (False, 1))
+        call_post("/api/enhance/undo", {"folder": self.ds, "name": out["name"], "backup": out["backup"], "old": out["old"],
+                                        "was_enhanced": out["was_enhanced"]})
+        self.assertEqual(self.enhanced()["shot.png"], 0)
+
+    def test_a_picture_that_was_enhanced_before_stays_marked_after_an_undone_replace(self):
+        self.decide("replace")                                       # now enhanced (the first replace is not undone)
+        call_post("/api/enhance/start", {"folder": self.ds, "name": "shot.png"})
+        self.wait()
+        out = self.decide("replace").data                            # a second round on the enhanced picture
+        self.assertTrue(out["was_enhanced"])
+        call_post("/api/enhance/undo", {"folder": self.ds, "name": out["name"], "backup": out["backup"], "old": out["old"],
+                                        "was_enhanced": out["was_enhanced"]})
+        self.assertEqual(self.enhanced()["shot.png"], 1)
+
     def test_a_decision_for_another_picture_or_without_a_result_is_refused(self):
         h = call_post("/api/enhance/decide", {"action": "replace", "folder": self.ds, "name": "other.png"})
         self.assertEqual(h.code, 400)

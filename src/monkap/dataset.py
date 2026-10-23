@@ -139,22 +139,26 @@ def _natural(name: str):
 
 
 def list_folder(folder, ext) -> list[list]:
-    """[[name, 1 if it has a caption file else 0], ...] for every picture the trainer reads, in natural order
-    (img_2 before img_10). Names only: sizes and captions load for the picture on screen."""
+    """[[name, 1 if it has a caption file else 0, the caption file's change time (0 when none)], ...] for every picture the
+    trainer reads, in natural order (img_2 before img_10). Names and times only: sizes and captions load for the picture on
+    screen."""
     ext = ext.lower()
-    pics, have = [], set()
+    pics, have = [], {}
     try:
-        with os.scandir(folder) as it:                # the file type comes with the listing: no stat per file
+        with os.scandir(folder) as it:                # the file type (and, on Windows, the time) comes with the listing
             for e in it:
                 stem, x = os.path.splitext(e.name)
                 x = x.lower()
                 if x == ext:
-                    have.add(stem)
+                    try:
+                        have[stem] = round(e.stat().st_mtime, 3)
+                    except OSError:
+                        have[stem] = 0
                 elif x in IMAGE_EXTS and not e.name.startswith(".") and e.is_file():
                     pics.append(e.name)
     except OSError as exc:
         raise NotFound("That folder isn't there.") from exc
-    return [[n, int(os.path.splitext(n)[0] in have)] for n in sorted(pics, key=_natural)]
+    return [[n, int(os.path.splitext(n)[0] in have), have.get(os.path.splitext(n)[0], 0)] for n in sorted(pics, key=_natural)]
 
 
 
