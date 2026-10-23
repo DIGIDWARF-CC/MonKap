@@ -21,7 +21,7 @@ def load_build():
 class Case(unittest.TestCase):
     def setUp(self):
         self.b = load_build()
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.init = os.path.join(self.tmp.name, "__init__.py")
         self.write('"""MonKap."""\n\n__version__ = "0.3.2"\nOTHER = "1.2.3"\n')
 

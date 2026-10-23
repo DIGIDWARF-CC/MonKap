@@ -41,7 +41,7 @@ def call_post(path, body):
 
 class ApiCase(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
         self._home = os.environ.get("MONKAP_HOME")
         os.environ["MONKAP_HOME"] = os.path.join(self.d, "home")                   # never the real application folder

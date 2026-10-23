@@ -15,7 +15,7 @@ def make_png(path, size=(300, 200)):
 
 class KaptureJobTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
         self.src = os.path.join(self.d, "page.png")
         make_png(self.src)
@@ -65,7 +65,7 @@ class KaptureJobTests(unittest.TestCase):
 
 class DeleteJobTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
         self.img = os.path.join(self.d, "a.png")
         make_png(self.img)
@@ -118,7 +118,7 @@ class CaptionExtensionTests(unittest.TestCase):
     """Fizgig's Caption Extension setting: every caption file follows it."""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
         self.src = os.path.join(self.d, "page.png")
         make_png(self.src)

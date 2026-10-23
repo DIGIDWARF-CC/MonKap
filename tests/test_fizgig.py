@@ -19,7 +19,7 @@ def write(path, data):
 
 class FakeFizgig(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
         self.fz = os.path.join(self.d, "Fizgig")
         self.ds = os.path.join(self.d, "ds")

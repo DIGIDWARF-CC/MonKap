@@ -19,7 +19,7 @@ def write(path, data):
 
 class Case(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         d = self.tmp.name
         self.fz, self.ds, self.out = (os.path.join(d, n) for n in ("Fizgig", "ds", "out"))
         os.makedirs(self.ds)

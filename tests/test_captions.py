@@ -40,7 +40,7 @@ class ChildTests(unittest.TestCase):
 
 class FileTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
         self.img = os.path.join(self.d, "a.png")
         open(self.img, "wb").close()
@@ -102,7 +102,7 @@ class ConflictTests(unittest.TestCase):
     """The .txt changed on disk while the editor held an older text (a captioning job, another tool)."""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.img = os.path.join(self.tmp.name, "a.png")
         open(self.img, "wb").close()
 

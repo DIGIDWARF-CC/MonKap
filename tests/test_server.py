@@ -27,7 +27,7 @@ def fetch(url, headers=None, data=None):
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.home = tempfile.TemporaryDirectory()
+        cls.home = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         os.environ["MONKAP_HOME"] = cls.home.name
         cls.srv, cls.url = server.start(18770, token="k" * 20)
         cls.base = f"http://127.0.0.1:{cls.srv.server_address[1]}"

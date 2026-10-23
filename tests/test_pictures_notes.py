@@ -26,7 +26,7 @@ def rows(ds, ext=".txt"):
 
 class JournalTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
 
     def tearDown(self):

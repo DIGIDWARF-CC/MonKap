@@ -93,7 +93,7 @@ class IndexTests(unittest.TestCase):
         self.assertEqual(n, 2)
 
     def test_plan_output_reads_disk(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             for name in ("p.png", "p_crop_001.png", "p_crop_001.txt", "p_crop_002.jpg"):
                 open(os.path.join(d, name), "wb").close()
             path, n = plan_output(d, DEFAULT_TEMPLATE, "p")
@@ -103,7 +103,7 @@ class IndexTests(unittest.TestCase):
 
 class CropTests(unittest.TestCase):
     def test_native_pixels_exact(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "src.png")
             im = make_grid_image(src)
             dest = os.path.join(d, "out.png")
@@ -114,7 +114,7 @@ class CropTests(unittest.TestCase):
             self.assertEqual(out.tobytes(), im.crop(box).tobytes())
 
     def test_square_crop_keeps_dimensions(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "s.png")
             make_grid_image(src, (500, 500))
             dest = os.path.join(d, "o.png")
@@ -122,7 +122,7 @@ class CropTests(unittest.TestCase):
             self.assertEqual(opened(dest).size, (320, 320))
 
     def test_source_untouched(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "s.png")
             make_grid_image(src)
             with open(src, "rb") as f:
@@ -133,7 +133,7 @@ class CropTests(unittest.TestCase):
             self.assertEqual(before, after)
 
     def test_never_overwrites(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "s.png")
             make_grid_image(src)
             dest = os.path.join(d, "o.png")
@@ -146,7 +146,7 @@ class CropTests(unittest.TestCase):
             self.assertEqual([f for f in os.listdir(d) if f.endswith(".part")], [])
 
     def test_bad_boxes(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "s.png")
             make_grid_image(src, (100, 100))
             dest = os.path.join(d, "o.png")
@@ -156,7 +156,7 @@ class CropTests(unittest.TestCase):
             self.assertFalse(os.path.exists(dest))
 
     def test_corrupt_source_leaves_nothing(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "bad.png")
             with open(src, "wb") as f:
                 f.write(b"not an image at all")
@@ -166,14 +166,14 @@ class CropTests(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(d)), ["bad.png"])
 
     def test_missing_output_folder(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "s.png")
             make_grid_image(src, (50, 50))
             with self.assertRaises(OSError):
                 crop_to_file(src, (0, 0, 10, 10), os.path.join(d, "nope", "o.png"))
 
     def test_alpha_palette_and_cmyk(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             rgba = os.path.join(d, "a.png")
             make_grid_image(rgba, (60, 60), "RGBA")
             out = os.path.join(d, "a_out.png")
@@ -191,7 +191,7 @@ class CropTests(unittest.TestCase):
             self.assertEqual(opened(out3).mode, "RGB")
 
     def test_series_of_four_distinct_files(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             src = os.path.join(d, "comic_page_012.png")
             make_grid_image(src, (400, 400))
             boxes = [(0, 0, 200, 200), (200, 0, 400, 200), (0, 200, 200, 400), (200, 200, 400, 400)]
@@ -205,7 +205,7 @@ class CropTests(unittest.TestCase):
 
 class ProvenanceTests(unittest.TestCase):
     def test_append_and_read_unicode(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             record_provenance(d, {"file": "кадр_crop_001.png", "source": "кадр.png", "box": [1, 2, 3, 4]})
             record_provenance(d, {"file": "b.png", "source": "a.png", "box": [0, 0, 5, 5]})
             rows = read_provenance(d)
@@ -213,7 +213,7 @@ class ProvenanceTests(unittest.TestCase):
             self.assertIn("time", rows[0])
 
     def test_sidecar_is_in_a_subfolder(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             record_provenance(d, {"file": "x"})
             self.assertEqual([f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f))], [])
 
@@ -225,7 +225,7 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(next_stem(DEFAULT_TEMPLATE, "p", taken), ("p_crop_003", 3))   # without history
 
     def test_ledger_roundtrip_and_plan_output(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             for n in (1, 2, 3):
                 record_name(d, f"p_crop_{n:03d}")
             open(os.path.join(d, "p.png"), "wb").close()      # none of the crops exist any more
@@ -234,20 +234,20 @@ class LedgerTests(unittest.TestCase):
             self.assertEqual((os.path.basename(path), n), ("p_crop_004.png", 4))
 
     def test_old_provenance_counts_as_history(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             record_provenance(d, {"file": "p_crop_007.png", "source": "p.png", "box": [0, 0, 1, 1]})
             self.assertIn("p_crop_007", history_stems(d))
             self.assertEqual(plan_output(d, DEFAULT_TEMPLATE, "p")[1], 8)
 
     def test_ledger_lives_in_the_hidden_subfolder(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             record_name(d, "x_crop_001")
             self.assertEqual([f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f))], [])
 
 
 class CachePurgeTests(unittest.TestCase):
     def test_only_the_exact_stems_latents_go(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             mine = ["img_1_0640x0480_krea2.safetensors", "IMG_1_0512x0384_qwen_image_2.1.safetensors"]
             keep = ["img_1_crop_001_0320x0320_krea2.safetensors", "img_10_0640x0480_krea2.safetensors",
                     "img_1_krea2_te.safetensors", "img_1x_0640x0480_krea2.safetensors", "notes.txt"]
@@ -257,7 +257,7 @@ class CachePurgeTests(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(d)), sorted(keep))
 
     def test_special_characters_in_the_stem_are_literal(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             open(os.path.join(d, "a.b(1)_0100x0100_x.safetensors"), "wb").close()
             open(os.path.join(d, "aXb(1)_0100x0100_x.safetensors"), "wb").close()
             self.assertEqual(purge_latent_cache(d, "a.b(1)"), 1)

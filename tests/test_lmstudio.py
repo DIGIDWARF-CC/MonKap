@@ -63,7 +63,7 @@ class LmStudioTests(unittest.TestCase):
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), Fake)
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
         cls.url = f"http://127.0.0.1:{cls.srv.server_address[1]}"
-        cls.tmp = tempfile.TemporaryDirectory()
+        cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.pic = os.path.join(cls.tmp.name, "a.png")
         Image.new("RGBA", (3000, 1500), (200, 30, 30, 255)).save(cls.pic)
 
@@ -165,7 +165,7 @@ class RecaptionHintTests(unittest.TestCase):
     def setUp(self):
         from monkap import api
         self.api = api
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self._home = os.environ.get("MONKAP_HOME")
         os.environ["MONKAP_HOME"] = os.path.join(self.tmp.name, "home")
         self.ds = os.path.join(self.tmp.name, "ds")
