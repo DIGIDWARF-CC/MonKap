@@ -321,9 +321,11 @@ def _lab_post(action: str, b: dict, ext: str) -> dict:
     folder = os.path.abspath(str(b.get("folder") or ""))
     tid = b.get("task")
     if action == "task":
-        return lab.create_task(load_settings(), folder, b.get("names"), str(b.get("instruction") or ""), str(b.get("title") or ""))
+        return lab.create_task(load_settings(), folder, b.get("names"), str(b.get("instruction") or ""), str(b.get("title") or ""),
+                               bool(b.get("override")))
     if action == "task/update":
-        return lab.update_task(folder, _task_id(tid), b.get("instruction"), b.get("remove"), b.get("title"))
+        return lab.update_task(folder, _task_id(tid), b.get("instruction"), b.get("remove"), b.get("title"),
+                               b.get("override"))
     if action == "task/delete":
         return lab.delete_task(folder, _task_id(tid))
     if action == "start":

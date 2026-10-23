@@ -7,7 +7,7 @@ MonKap reads a few of Fizgig's own files and never writes to them:
   user_data/prefs.json       where Fizgig keeps its latent cache and its LoRAs' output
   docs/RELEASE_NOTES_v*.md   which version this is
 
-This depends on how Fizgig stores its folders and settings. It was written against Fizgig 8.5, and every reader
+This depends on how Fizgig stores its folders and settings. It was written against Fizgig 8.5 and last checked against 8.9.3, and every reader
 returns "nothing" instead of failing when a file or a key is not where it was, so a change on Fizgig's side leaves
 MonKap with its own settings rather than with an error. Watch for MonKap updates after Fizgig's.
 """
@@ -18,7 +18,7 @@ import json
 import os
 import re
 
-TESTED = "8.5.9"                           # the Fizgig this was checked against
+TESTED = "8.9.3"                           # the Fizgig this was checked against
 
 
 def _json(dir_: str, *parts) -> dict:

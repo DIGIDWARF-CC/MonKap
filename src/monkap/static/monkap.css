@@ -418,3 +418,8 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px; 
 .lab-res .racts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .lab-res .racts .btn:disabled { opacity: .45; cursor: not-allowed; }
 .mk-diff[hidden] { display: none; }
+.lab-override { display: flex; gap: 6px; align-items: center; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
+.lab-pill { align-self: flex-start; padding: 0 8px; border-radius: 999px; font: 600 11px/18px var(--font-family); background: rgba(80, 55, 10, .9); color: #f3c46a; border: 1px solid rgba(243, 196, 106, .45); }
+.lab-tile .sz { left: 5px; bottom: 5px; }
+.lab-tile .pills { left: 5px; right: auto; bottom: 26px; }
+.lab-tile .bl { left: auto; right: 5px; bottom: 26px; }

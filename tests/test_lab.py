@@ -88,6 +88,24 @@ class TaskTests(Case):
         self.assertTrue(self.fc.prompts[0]["2"]["inputs"]["value"].endswith("only the face"))
         self.assertEqual(len(self.fc.prompts), 2)
 
+    def test_an_overriding_task_sends_only_its_own_words_and_needs_some(self):
+        h = self.post("task", names=["a.png"], instruction="", override=True)
+        self.assertEqual(h.code, 400)
+        self.assertIn("whole prompt", h.data["error"])
+        tid = self.task(("a", "b"), instruction=" only   this ", override=True)
+        t = self.state()["tasks"][0]
+        self.assertTrue(t["override"])
+        self.assertEqual(self.post("task/update", task=tid, instruction="").code, 400)
+        self.post("start", task=tid)
+        self.wait_idle()
+        self.assertEqual({p["inputs"]["value"] for p in [pr["2"] for pr in self.fc.prompts]}, {"only this"})
+        plain = self.task(("c",), instruction="extra")
+        self.assertFalse([t for t in self.state()["tasks"] if t["id"] == plain][0]["override"])
+        self.post("start", task=plain)
+        self.wait_idle()
+        self.assertTrue(self.fc.prompts[-1]["2"]["inputs"]["value"].endswith("extra"))
+        self.assertGreater(len(self.fc.prompts[-1]["2"]["inputs"]["value"]), len("extra"))
+
     def test_a_picture_in_a_task_or_waiting_is_skipped_at_creation(self):
         self.task(("a",))
         h = self.post("task", names=["a.png", "b.png"])

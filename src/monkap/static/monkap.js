@@ -212,7 +212,7 @@
       ...rows,
       rv && rv.advice && rv.advice.length ? el("h3", {text: "What to try", style: "margin:14px 0 4px"}) : null,
       ...(rv && rv.advice ? rv.advice.map((t) => el("p", {class: "lead", text: "• " + t})) : []),
-      rv ? el("div", {class: "field-hint", text: "The verdicts read Fizgig's own files and depend on its version; the setting names are as in Fizgig 8.5."}) : null,
+      rv ? el("div", {class: "field-hint", text: "The verdicts read Fizgig's own files and depend on its version; the setting names are as in Fizgig 8.9."}) : null,
       el("div", {class: "buttons"}, close)]);
     const onKey = (e) => { if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); shut(); } };
     const shut = () => { document.removeEventListener("keydown", onKey, true); done(); };

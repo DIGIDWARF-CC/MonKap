@@ -144,10 +144,13 @@ const MonKapLab = (() => {
     // ---- the right side: make a task, and the tasks ----------------------------------------------------------------------
     const words = el("textarea", {rows: "3", placeholder: "Additional instruction for the enhancer (empty: the defaults)", spellcheck: "false",
       "aria-label": "Additional instruction for the new task"});
+    const OVERRIDE_TIP = "The default words of the ComfyUI template (and the ones from the settings) are not added in front of this task's instruction: what you write is the whole prompt.";
+    const overrideBox = el("input", {type: "checkbox", id: "labOverride"});
+    const overrideRow = el("label", {class: "lab-override", title: OVERRIDE_TIP}, overrideBox, el("span", {text: "Completely override default prompt"}));
     const make = el("button", {type: "button", class: "btn btn-primary btn-sm", onclick: makeTask});
     const labNote = el("div", {class: "field-hint lab-note"});
     const list = el("div", {class: "lab-list"});
-    const side = el("aside", {class: "lab-tasks"}, el("h3", {text: "Tasks"}), el("div", {class: "lab-new"}, words, make, labNote), list);
+    const side = el("aside", {class: "lab-tasks"}, el("h3", {text: "Tasks"}), el("div", {class: "lab-new"}, words, overrideRow, make, labNote), list);
     view.append(left, side);
 
     function say(text, kind = "", action = null) {
@@ -171,8 +174,8 @@ const MonKapLab = (() => {
       }
       make.disabled = true;
       try {
-        const r = await api("/api/lab/task", {folder: M.folder, names, instruction: words.value});
-        picked = new Set(); words.value = "";
+        const r = await api("/api/lab/task", {folder: M.folder, names, instruction: words.value, override: overrideBox.checked});
+        picked = new Set(); words.value = ""; overrideBox.checked = false;
         const more = r.skipped.length > 6 ? ` and ${r.skipped.length - 6} more` : "";
         say(r.skipped.length ? `Task made with ${plural(r.added, "picture")}. Left out, because they are in a task or wait for a decision: ${r.skipped.slice(0, 6).join(", ")}${more}.`
           : `Task made with ${plural(r.added, "picture")}.`, r.skipped.length ? "warn" : "ok-note");
@@ -209,11 +212,15 @@ const MonKapLab = (() => {
         title: live ? "A running task can't be edited: stop it first" : "Saved when you leave the box"});
       ins.value = t.instruction || "";
       ins.addEventListener("change", () => call("task/update", t.id, {instruction: ins.value}));
+      const over = el("label", {class: "lab-override", title: live ? "A running task can't be edited: stop it first" : OVERRIDE_TIP},
+        el("input", {type: "checkbox", checked: !!t.override, disabled: live, onchange: (e) => call("task/update", t.id, {override: e.target.checked})}),
+        el("span", {text: "Override default prompt"}));
       const frac = t.total ? Math.round(100 * t.done / t.total) : 0;
       const failedNames = Object.keys(t.failed || {});
       const cur = st.current && st.current.task === t.id && !st.current.regen ? st.current : null;
       const parts = [el("div", {class: "head"}, el("b", {text: t.name}), el("span", {class: "state", text: stateText(t)})),
-        ins,
+        t.override ? el("span", {class: "lab-pill", title: OVERRIDE_TIP, text: "overridden enhancer defaults"}) : null,
+        ins, over,
         el("div", {class: "bar"}, el("i", {style: `width:${frac}%`})),
         el("div", {class: "line", text: `${t.done} of ${t.total} done${etaText(t)}`}),
         cur ? el("div", {class: "line cur", text: `${cur.name}: ${cur.stage}${cur.steps ? ` (step ${cur.step} of ${cur.steps})` : ""}`}) : null,

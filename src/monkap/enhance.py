@@ -95,9 +95,16 @@ def start(s: MonkapSettings, folder: str, name: str, hint: str = "", prompt: str
     return {"seed": seed}
 
 
-def _words(s: MonkapSettings, t: comfy.Template, hint: str) -> str | None:
-    """The prompt for a run: the settings' words (else the template's own) and, after them, the user's hint."""
+def _words(s: MonkapSettings, t: comfy.Template, hint: str, override: bool = False) -> str | None:
+    """The prompt for a run: the settings' words (else the template's own) and, after them, the user's hint. With `override` the
+    hint is the whole prompt: neither the settings' words nor the template's own are used."""
     hint = " ".join(str(hint or "").split())[:MAX_PROMPT]
+    if override:
+        if "prompt" not in t.nodes:
+            raise ValueError("This template has no \"MonKap Prompt\" node, so the prompt can't be overridden.")
+        if not hint:
+            raise ValueError("Write the instruction: with the defaults overridden it is the whole prompt.")
+        return hint
     if "prompt" not in t.nodes:
         if hint:
             raise ValueError("This template has no \"MonKap Prompt\" node, so your words can't be used.")

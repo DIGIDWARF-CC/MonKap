@@ -122,7 +122,7 @@ def state(folder: str) -> dict:
             continue
         for name in t["pictures"]:
             assigned[name] = t["id"]
-        tasks.append({"id": t["id"], "name": t["name"], "instruction": t["instruction"], "pictures": list(t["pictures"]),
+        tasks.append({"id": t["id"], "name": t["name"], "instruction": t["instruction"], "override": bool(t.get("override")), "pictures": list(t["pictures"]),
                       "failed": dict(t.get("failed") or {}), "total": t["total"], "done": t["done"], "state": t["state"],
                       "error": t.get("error", ""), "position": queue.index(t["id"]) + 1 if t["id"] in queue else 0,
                       "started_at": t.get("started_at")})
@@ -214,7 +214,7 @@ def facts(folder: str) -> dict:
 
 # ------------------------------------------------------------------------------------------------ tasks
 
-def create_task(s: MonkapSettings, folder: str, names, instruction: str = "", name: str = "") -> dict:
+def create_task(s: MonkapSettings, folder: str, names, instruction: str = "", name: str = "", override: bool = False) -> dict:
     """A task from the picked pictures. A picture already in a task, or waiting for a decision, is left out (and named)."""
     folder = os.path.abspath(folder)
     if not isinstance(names, list) or not names:
@@ -222,8 +222,8 @@ def create_task(s: MonkapSettings, folder: str, names, instruction: str = "", na
     for n in names:
         dataset.locate(folder, str(n))                      # each must be a real picture of the folder
     template = enhance.load_template(s)
-    words = enhance._words(s, template, instruction)         # refuses words a template can't take
-    del words
+    override = bool(override)
+    enhance._words(s, template, instruction, override)      # refuses words a template can't take, and an override with no words
     instruction = " ".join(str(instruction or "").split())[:enhance.MAX_PROMPT]
 
     def make(st):
@@ -235,13 +235,13 @@ def create_task(s: MonkapSettings, folder: str, names, instruction: str = "", na
             raise ValueError("Every picked picture is already in a task or waiting for a decision.")
         tid = st["next"]
         st["next"] = tid + 1
-        st["tasks"].append({"id": tid, "name": (str(name).strip()[:60] or f"Task {tid}"), "instruction": instruction,
+        st["tasks"].append({"id": tid, "name": (str(name).strip()[:60] or f"Task {tid}"), "instruction": instruction, "override": override,
                             "pictures": picked, "failed": {}, "total": len(picked), "done": 0, "state": "idle", "error": ""})
         return {"id": tid, "added": len(picked), "skipped": skipped}
     return _mutate(folder, make)
 
 
-def update_task(folder: str, tid: int, instruction=None, remove=None, name=None) -> dict:
+def update_task(folder: str, tid: int, instruction=None, remove=None, name=None, override=None) -> dict:
     """Change a task that is not queued or running: its instruction, its name, which pictures it holds."""
     def change(st):
         t = _task(st, tid)
@@ -251,6 +251,10 @@ def update_task(folder: str, tid: int, instruction=None, remove=None, name=None)
             raise ValueError("A running task can't be edited: stop it first.")
         if instruction is not None:
             t["instruction"] = " ".join(str(instruction).split())[:enhance.MAX_PROMPT]
+        if override is not None:
+            t["override"] = bool(override)
+        if t.get("override") and not t["instruction"]:
+            raise ValueError("Write the instruction: with the defaults overridden it is the whole prompt.")
         if name is not None and str(name).strip():
             t["name"] = str(name).strip()[:60]
         for n in remove or []:
@@ -399,7 +403,7 @@ def _run_task(folder: str, tid: int) -> None:
                 return
             hidden = bool(t.get("hidden"))
             todo = [n for n in t["pictures"] if n not in (t.get("failed") or {})]
-            pick.update({"name": todo[0] if todo else None, "words": t["instruction"], "hidden": hidden, "regen": t.get("regen")})
+            pick.update({"name": todo[0] if todo else None, "words": t["instruction"], "override": bool(t.get("override")), "hidden": hidden, "regen": t.get("regen")})
         _mutate(folder, choose)
         name = pick.get("name")
         if not name:
@@ -410,7 +414,7 @@ def _run_task(folder: str, tid: int) -> None:
             _mutate(folder, lambda st: _leave(st, tid, name, gone=True))
             continue
         try:
-            words = pick["words"] if hidden else enhance._words(s, template, pick["words"])
+            words = pick["words"] if hidden else enhance._words(s, template, pick["words"], pick["override"])
             with open(path, "rb") as f:
                 data = f.read()
             w, h = dataset.picture_size(path)
