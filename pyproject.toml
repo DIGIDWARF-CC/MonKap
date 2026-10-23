@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "monkap"
-version = "0.3.2"
+dynamic = ["version"]
 description = "A workbench for preparing image datasets: frame and crop pictures, write and edit captions by hand or with a model, and review the whole set from the keyboard."
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -19,6 +19,9 @@ monkap = "monkap.__main__:main"
 
 [project.gui-scripts]
 monkap-gui = "monkap.gui:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "monkap.__version__" }      # the one place the version lives: src/monkap/__init__.py (packaging/build.py --bump)
 
 [tool.setuptools.packages.find]
 where = ["src"]
